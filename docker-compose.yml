@@ -6,7 +6,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       # Mount directories to persist database, vector store, and uploads outside the container
       - ./backend/uploads:/app/uploads
