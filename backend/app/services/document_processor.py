@@ -111,7 +111,7 @@ class DocumentProcessor:
             confidence_score = 0.95
             
             # Try to extract a name or generate default
-            name = DocumentProcessor._extract_regex(ocr_text, r"(?:Name|NAME)[:\s]+([A-Za-z\s]+)", "Praveen Kumar")
+            name = DocumentProcessor._extract_regex(ocr_text, r"(?:Name|NAME)[:\s]+([A-Za-z\s]+?)(?=\s*(?:DOB|Birth|Gender|Aadhaar|Card|$))", "Praveen Kumar")
             dob = DocumentProcessor._extract_regex(ocr_text, r"(?:DOB|Birth)[:\s]+([\d/]+)", "15/08/1995")
             gender = "Male" if "female" not in ocr_lower else "Female"
             aadhaar_no = DocumentProcessor._extract_regex(ocr_text, r"(\d{4}\s?\d{4}\s?\d{4})", "123456789012").replace(" ", "")
@@ -140,8 +140,8 @@ class DocumentProcessor:
             category = "Identity Documents"
             document_type = "PAN Card"
             confidence_score = 0.95
-            name = DocumentProcessor._extract_regex(ocr_text, r"(?:Name|NAME)[:\s]+([A-Za-z\s]+)", "Praveen Kumar")
-            father = DocumentProcessor._extract_regex(ocr_text, r"(?:Father|FATHER)[:\s]+([A-Za-z\s]+)", "Ramesh Kumar")
+            name = DocumentProcessor._extract_regex(ocr_text, r"(?:Name|NAME)[:\s]+([A-Za-z\s]+?)(?=\s*(?:Father|DOB|Birth|PAN|Card|$))", "Praveen Kumar")
+            father = DocumentProcessor._extract_regex(ocr_text, r"(?:Father|FATHER)[:\s]+([A-Za-z\s]+?)(?=\s*(?:DOB|Birth|PAN|Card|$))", "Ramesh Kumar")
             dob = DocumentProcessor._extract_regex(ocr_text, r"(?:DOB|Birth)[:\s]+([\d/]+)", "15/08/1995")
             pan_no = DocumentProcessor._extract_regex(ocr_text, r"([A-Z]{5}\d{4}[A-Z]{1})", "ABCDE1234F")
 
@@ -166,7 +166,7 @@ class DocumentProcessor:
             category = "Identity Documents"
             document_type = "Driving Licence"
             confidence_score = 0.90
-            name = DocumentProcessor._extract_regex(ocr_text, r"(?:Name|NAME)[:\s]+([A-Za-z\s]+)", "Praveen Kumar")
+            name = DocumentProcessor._extract_regex(ocr_text, r"(?:Name|NAME)[:\s]+([A-Za-z\s]+?)(?=\s*(?:DOB|Birth|DL|Licence|Expiry|$))", "Praveen Kumar")
             dob = DocumentProcessor._extract_regex(ocr_text, r"(?:DOB|Birth)[:\s]+([\d/]+)", "15/08/1995")
             dl_no = DocumentProcessor._extract_regex(ocr_text, r"([A-Z]{2}\d{13})", "KA0320150089473")
             expiry = DocumentProcessor._extract_regex(ocr_text, r"(?:Expiry|EXP)[:\s]+([\d/]+)", "14/08/2035")
@@ -202,7 +202,7 @@ class DocumentProcessor:
             category = "Academic Records"
             document_type = "Class 10 Marksheet" if "10" in combined or "sslc" in combined or "matric" in combined else "Class 12 Marksheet"
             confidence_score = 0.92
-            name = DocumentProcessor._extract_regex(ocr_text, r"(?:Name|NAME)[:\s]+([A-Za-z\s]+)", "Praveen Kumar")
+            name = DocumentProcessor._extract_regex(ocr_text, r"(?:Name|NAME)[:\s]+([A-Za-z\s]+?)(?=\s*(?:Roll|Year|Marksheet|Board|$))", "Praveen Kumar")
             roll_no = DocumentProcessor._extract_regex(ocr_text, r"(?:Roll|ROLL)[:\s]+(\d+)", "4810294")
             year = DocumentProcessor._extract_regex(ocr_text, r"(?:Year|YEAR)[:\s]+(\d{4})", "2011")
             
