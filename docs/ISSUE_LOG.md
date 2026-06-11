@@ -93,5 +93,68 @@ This file is a running log of all failures, errors, installation bugs, and logic
 - **Learning:**
   When deploying systems on brand-new Python runtimes, avoid overly restrictive pinning. Let package managers resolve dependency resolutions dynamically to match target runtimes.
 
+## Issue #004 — WSL Read-Only Mount due to Full Host C: Drive
+- **Date:** 2026-06-11
+- **Phase:** Docker Setup & Execution
+- **File:** WSL2 / Docker Desktop Daemon
+- **Error Message:**
+  ```text
+  ERROR: rpc error: code = Internal desc = write /var/lib/docker/buildkit/containerd-overlayfs/metadata_v2.db: input/output error
+  ERROR: Could not install packages due to an OSError: [Errno 5] Input/output error
+  ```
+- **Root Cause:**
+  The host Windows machine's C: drive was completely full (0 bytes free), causing the WSL2 virtual disk (`ext4.vhdx`) to fail any write operation. WSL2 automatically remounted the filesystem as read-only to prevent corruption.
+- **What I Tried:**
+  - Ran `docker builder prune -f` to clear space within the WSL environment (reclaimed 3.4 GB).
+  - Checked disk usage via `wsl df -h` and saw C: drive was 100% full.
+- **Fix:**
+  Shut down the WSL2 environment completely:
+  ```powershell
+  wsl --shutdown
+  ```
+  And advised the user to free up disk space on C: (or move WSL2 to E: / F: drive).
+- **Learning:**
+  WSL2 Input/output errors are almost always caused by Windows host disk exhaustions. Always verify host drive capacities when VM daemons begin failing with write permissions.
+
+## Issue #005 — Database File Mapped as Directory by Docker
+- **Date:** 2026-06-11
+- **Phase:** Docker Run
+- **File:** [docker-compose.yml](file:///e:/Desktop/AI%20CHATBOT/docker-compose.yml)
+- **Error Message:**
+  ```text
+  sqlite3.OperationalError: unable to open database file
+  ```
+- **Root Cause:**
+  In `docker-compose.yml`, the volume `- ./backend/neurovault.db:/app/neurovault.db` mapped a non-existent file on the host. When a file volume source does not exist, Docker automatically initializes it as a directory. SQLite crashed trying to open a directory as a DB file.
+- **What I Tried:**
+  - Inspected the host filesystem mode of `backend/neurovault.db` and confirmed it was a directory (`Mode: d-----`).
+- **Fix:**
+  Deleted the folder and updated `docker-compose.yml` to map a directory instead of a file:
+  ```yaml
+  volumes:
+    - ./backend/data:/app/data
+  environment:
+    - DATABASE_URL=sqlite:////app/data/neurovault.db
+  ```
+- **Learning:**
+  Never map individual SQLite files directly in Docker volumes. Always map the parent directory (e.g. `data/` folder) to prevent Docker from creating dummy directories.
+
+## Issue #006 — Missing email-validator Dependency
+- **Date:** 2026-06-11
+- **Phase:** Docker Run
+- **File:** [requirements.txt](file:///e:/Desktop/AI%20CHATBOT/backend/requirements.txt)
+- **Error Message:**
+  ```text
+  ImportError: email-validator is not installed, run `pip install 'pydantic[email]'`
+  ```
+- **Root Cause:**
+  The User schemas in `app/schemas/user.py` use Pydantic's `EmailStr` class, which requires `email-validator` to be installed. The package was not listed in `requirements.txt`.
+- **What I Tried:**
+  - Verified package list in `backend/requirements.txt`.
+- **Fix:**
+  Appended `email-validator` to `requirements.txt` and rebuilt the backend container.
+- **Learning:**
+  Pydantic core features like `EmailStr` require extra validation packages. Ensure they are listed in dependencies.
+
 
 
