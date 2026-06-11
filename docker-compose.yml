@@ -11,10 +11,10 @@ services:
       # Mount directories to persist database, vector store, and uploads outside the container
       - ./backend/uploads:/app/uploads
       - ./backend/vector_store:/app/vector_store
-      - ./backend/neurovault.db:/app/neurovault.db
+      - ./backend/data:/app/data
     environment:
       - ENV_MODE=production
-      - DATABASE_URL=sqlite:////app/neurovault.db
+      - DATABASE_URL=sqlite:////app/data/neurovault.db
       - CHROMA_PERSIST_DIR=/app/vector_store
       - UPLOADS_DIR=/app/uploads
     restart: unless-stopped

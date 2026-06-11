@@ -6,4 +6,3 @@ vector_store
 neurovault.db
 .git
 .gitignore
-.env
