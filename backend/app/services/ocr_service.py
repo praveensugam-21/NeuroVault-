@@ -115,7 +115,7 @@ class OCRService:
         genai.configure(api_key=settings.GEMINI_API_KEY)
         
         # Load model
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         
         prompt = (
             "You are an advanced OCR engine. Read this document image or file and output "
