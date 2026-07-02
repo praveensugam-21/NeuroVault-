@@ -66,6 +66,10 @@ class OCRService:
                             for img_idx, image_obj in enumerate(page.images):
                                 try:
                                     img = Image.open(io.BytesIO(image_obj.data))
+                                    # Skip small images like layout decorations, company icons, or bullet elements
+                                    if img.width < 150 or img.height < 150:
+                                        logger.info(f"Skipping tiny image {img_idx} ({img.width}x{img.height}) on page {page_idx}")
+                                        continue
                                     results = reader_easy.readtext(img, detail=0)
                                     if results:
                                         page_img_text.extend(results)

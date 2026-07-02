@@ -55,6 +55,10 @@ def startup_event():
     from app.services.document_processor import get_spacy_nlp
     threading.Thread(target=get_spacy_nlp, daemon=True).start()
 
+    # Pre-load SentenceTransformer in a background thread to prevent first-upload index lag
+    from app.services.embedding_service import get_embedding_model
+    threading.Thread(target=get_embedding_model, daemon=True).start()
+
 @app.get("/")
 def read_root():
     return {
