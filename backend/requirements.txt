@@ -5,7 +5,6 @@ pydantic
 pydantic-settings
 python-multipart
 python-jose[cryptography]
-passlib[bcrypt]
 python-dotenv
 chromadb
 sentence-transformers
@@ -14,3 +13,7 @@ pillow
 pytest
 bcrypt
 email-validator
+pypdf
+easyocr
+spacy
+opencv-python-headless

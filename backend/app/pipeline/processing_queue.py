@@ -67,7 +67,7 @@ class DocumentPipelineManager:
 
             # --- Step 4 & 5: Classification & Extraction ---
             logger.info("[Step 4-5/15] Document taxonomy classification & JSON field extraction...")
-            result = DocumentProcessor.process_document(file_path, file_type, ocr_text)
+            result = DocumentProcessor.process_document(file_path, file_type, ocr_text, original_name=document.name)
 
             # --- Step 6-8: Validation, Quality Score & Summary Card ---
             logger.info("[Step 6-8/15] Format validations & Summary card generation...")

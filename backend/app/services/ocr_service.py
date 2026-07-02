@@ -42,6 +42,44 @@ class OCRService:
                 logger.error(f"Failed to read text file directly: {str(e)}")
                 return ""
 
+        # Try text extraction for PDFs (both digital text layer and scanned images)
+        if file_type.lower() == "pdf":
+            try:
+                import pypdf
+                import io
+                reader = pypdf.PdfReader(file_path)
+                pdf_text = ""
+                
+                # 1. Try digital text extraction first
+                for page in reader.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        pdf_text += page_text + "\n"
+                
+                # 2. If it is a scanned PDF (no digital text found) and local OCR is enabled
+                if not pdf_text.strip() and settings.ENABLE_LOCAL_OCR:
+                    logger.info("No digital text found in PDF. Extracting embedded images for local EasyOCR fallback...")
+                    reader_easy = get_easyocr_reader()
+                    if reader_easy:
+                        for page_idx, page in enumerate(reader.pages):
+                            page_img_text = []
+                            for img_idx, image_obj in enumerate(page.images):
+                                try:
+                                    img = Image.open(io.BytesIO(image_obj.data))
+                                    results = reader_easy.readtext(img, detail=0)
+                                    if results:
+                                        page_img_text.extend(results)
+                                except Exception as img_err:
+                                    logger.warning(f"Failed to scan image {img_idx} on page {page_idx}: {str(img_err)}")
+                            if page_img_text:
+                                pdf_text += "\n".join(page_img_text) + "\n"
+
+                if pdf_text.strip():
+                    logger.info("Successfully extracted text from PDF layer.")
+                    return pdf_text
+            except Exception as e:
+                logger.warning(f"PDF text extraction failed: {str(e)}")
+
         # For PDFs and Images:
         # Check if we can use Gemini (primary)
         if settings.GEMINI_API_KEY:
@@ -53,6 +91,9 @@ class OCRService:
         # Fallback to local OCR if allowed
         if settings.ENABLE_LOCAL_OCR:
             try:
+                if file_type.lower() == "pdf":
+                    logger.warning("Local EasyOCR does not support PDF files directly and pypdf returned no text.")
+                    return ""
                 return OCRService._extract_via_local_ocr(file_path)
             except Exception as e:
                 logger.error(f"Local OCR extraction failed: {str(e)}")

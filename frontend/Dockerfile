@@ -16,6 +16,9 @@ RUN npm run build
 # Stage 2: Production web server
 FROM nginx:alpine
 
+# Copy custom Nginx routing configuration
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
 # Copy compiled static assets from build stage to nginx folder
 COPY --from=build /app/dist /usr/share/nginx/html
 

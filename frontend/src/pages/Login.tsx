@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
-import { FolderLock, AlertCircle } from 'lucide-react';
+import { FolderLock, AlertCircle, Loader2 } from 'lucide-react';
 
 export const Login: React.FC = () => {
   const { login, register, error, clearError, loading } = useAuthStore();
@@ -26,68 +26,88 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-card border border-border p-8 rounded-lg space-y-6 shadow-lg">
-        {/* Brand */}
+    <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-[#E5E7EB] dark:border-slate-800 p-8 rounded shadow-[0_1px_3px_rgba(0,0,0,0.05)] space-y-6">
+        
+        {/* Brand Header */}
         <div className="flex flex-col items-center text-center space-y-2 select-none">
-          <div className="p-3 bg-secondary rounded border border-border">
-            <FolderLock className="w-6 h-6 text-primary" />
+          <div className="p-2 bg-[#F3F4F6] dark:bg-slate-800 rounded border border-[#E5E7EB] dark:border-slate-800">
+            <FolderLock className="w-5 h-5 text-[#2563EB]" />
           </div>
-          <h2 className="text-xl font-bold tracking-tight">NeuroVault AI</h2>
-          <p className="text-xs text-muted-foreground">Personal Knowledge Reasoning Layer</p>
+          <h2 className="text-lg font-semibold tracking-tight text-[#111827] dark:text-slate-100">
+            NeuroVault AI
+          </h2>
+          <p className="text-xs text-[#6B7280] dark:text-slate-400">
+            Personal Knowledge Reasoning Layer
+          </p>
         </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase">Email Address</label>
+            <label className="text-[10px] font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">
+              Email Address
+            </label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@company.com"
-              className="w-full bg-background border border-border rounded px-3 py-2 text-xs focus:outline-none focus:border-primary"
+              className="nv-input"
               required
+              disabled={loading}
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase">Password</label>
+            <label className="text-[10px] font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">
+              Password
+            </label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full bg-background border border-border rounded px-3 py-2 text-xs focus:outline-none focus:border-primary"
+              className="nv-input"
               required
+              disabled={loading}
             />
           </div>
 
           {error && (
-            <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 text-red-800 dark:text-red-400 p-3 rounded text-xs flex items-center gap-2">
+            <div className="bg-[#DC2626]/5 border border-[#DC2626]/20 text-[#DC2626] p-3 rounded text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              <span>{error}</span>
+              <span className="font-medium">{error}</span>
             </div>
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-primary text-primary-foreground hover:bg-primary/95 py-2.5 rounded text-xs font-semibold disabled:opacity-50 transition-colors"
+            className="w-full nv-btn-primary h-10 font-semibold"
           >
-            {loading ? 'Authenticating...' : isRegister ? 'Create Account' : 'Sign In'}
+            {loading ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Authenticating...</span>
+              </>
+            ) : isRegister ? (
+              'Create Account'
+            ) : (
+              'Sign In'
+            )}
           </button>
         </form>
 
         {/* Toggle Mode */}
-        <div className="text-center">
+        <div className="text-center pt-2 border-t border-[#E5E7EB] dark:border-slate-800">
           <button
             type="button"
             onClick={() => {
               setIsRegister(!isRegister);
               clearError();
             }}
-            className="text-[11px] text-muted-foreground hover:underline"
+            className="text-xs text-[#6B7280] dark:text-slate-400 hover:text-[#2563EB] transition-colors"
           >
             {isRegister ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
           </button>

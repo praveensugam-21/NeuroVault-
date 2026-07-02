@@ -43,6 +43,18 @@ app.include_router(graph.router)
 app.include_router(dashboard.router)
 app.include_router(digest.router)
 
+@app.on_event("startup")
+def startup_event():
+    import threading
+    # Pre-load EasyOCR in a background thread to prevent first-run delay
+    if settings.ENABLE_LOCAL_OCR:
+        from app.services.ocr_service import get_easyocr_reader
+        threading.Thread(target=get_easyocr_reader, daemon=True).start()
+        
+    # Pre-load spaCy NER in a background thread
+    from app.services.document_processor import get_spacy_nlp
+    threading.Thread(target=get_spacy_nlp, daemon=True).start()
+
 @app.get("/")
 def read_root():
     return {

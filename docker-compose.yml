@@ -8,10 +8,11 @@ services:
     ports:
       - "8001:8000"
     volumes:
-      # Mount directories to persist database, vector store, and uploads outside the container
       - ./backend/uploads:/app/uploads
       - ./backend/vector_store:/app/vector_store
       - ./backend/data:/app/data
+      - ./backend/cache/huggingface:/root/.cache/huggingface
+      - ./backend/cache/easyocr:/root/.easyocr
     environment:
       - ENV_MODE=production
       - DATABASE_URL=sqlite:////app/data/neurovault.db

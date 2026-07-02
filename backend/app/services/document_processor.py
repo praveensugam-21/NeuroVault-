@@ -29,11 +29,11 @@ def get_spacy_nlp():
 
 class DocumentProcessor:
     @staticmethod
-    def process_document(file_path: str, file_type: str, ocr_text: str) -> Dict[str, Any]:
+    def process_document(file_path: str, file_type: str, ocr_text: str, original_name: str = None) -> Dict[str, Any]:
         """
         Main entry point for classifying and extracting fields from OCR text.
         """
-        filename = os.path.basename(file_path).lower()
+        filename = (original_name or os.path.basename(file_path)).lower()
         
         # If API key is available, use Gemini Vision/Text for processing
         if settings.GEMINI_API_KEY:
@@ -105,7 +105,8 @@ class DocumentProcessor:
         combined = f"{filename} {ocr_lower}"
 
         # 1. Aadhaar Card
-        if "aadhaar" in combined or "unique identification" in combined or "uidai" in combined:
+        has_aadhaar_pattern = bool(re.search(r"\d{4}\s?\d{4}\s?\d{4}", ocr_text))
+        if "aadhaar" in combined or "aadhar" in combined or "adhar" in combined or "unique identification" in combined or "uidai" in combined or has_aadhaar_pattern:
             category = "Identity Documents"
             document_type = "Aadhaar Card"
             confidence_score = 0.95
@@ -136,7 +137,7 @@ class DocumentProcessor:
             }
 
         # 2. PAN Card
-        elif "pan" in combined or "permanent account" in combined or "income tax" in combined:
+        elif "pan" in combined or "permanent account" in combined or "income tax" in combined or bool(re.search(r"[A-Z]{5}\d{4}[A-Z]", ocr_text.upper())):
             category = "Identity Documents"
             document_type = "PAN Card"
             confidence_score = 0.95

@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useVaultStore } from '../store/useVaultStore';
-import { KeyRound, Clock, ShieldAlert } from 'lucide-react';
-
+import { KeyRound, Clock, ShieldAlert, Check } from 'lucide-react';
 import api from '../services/api';
+
+type SettingsTab = 'security' | 'audit';
 
 export const Settings: React.FC = () => {
   const { setupPin, error, clearError } = useAuthStore();
   const { fetchDocuments, fetchStats } = useVaultStore();
 
+  const [activeTab, setActiveTab] = useState<SettingsTab>('security');
   const [pin, setPin] = useState('');
   const [pinConfirm, setPinConfirm] = useState('');
   const [pinMessage, setPinMessage] = useState<string | null>(null);
@@ -67,7 +69,6 @@ export const Settings: React.FC = () => {
       )
     ) {
       try {
-        // Fetch current documents and delete one by one
         const docsResponse = await api.get('/api/documents/');
         const docs = docsResponse.data;
         for (const doc of docs) {
@@ -84,140 +85,192 @@ export const Settings: React.FC = () => {
   };
 
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-8 h-full overflow-y-auto">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Security & Settings</h1>
-        <p className="text-muted-foreground text-sm">
-          Manage PIN locks, inspect file access audits, and configure compliance profiles.
-        </p>
-      </div>
+    <div className="flex flex-col h-full bg-[#F8FAFC] dark:bg-slate-950 overflow-y-auto">
+      
+      {/* Top Header Bar */}
+      <header className="h-14 border-b border-[#E5E7EB] dark:border-slate-800 bg-white dark:bg-slate-900 px-8 flex items-center shrink-0">
+        <div className="flex items-center gap-2 text-xs text-[#6B7280]">
+          <span>System</span>
+          <span>/</span>
+          <span className="text-[#111827] dark:text-slate-200 font-medium">Security & Settings</span>
+        </div>
+      </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-        {/* PIN Configuration Panel */}
-        <div className="bg-card border border-border p-6 rounded-lg space-y-6 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-secondary rounded border border-border">
-              <KeyRound className="w-4 h-4 text-primary" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold">Secondary Lock PIN</h3>
-              <p className="text-[10px] text-muted-foreground">Configure secondary validation to lock assets.</p>
-            </div>
-          </div>
-
-          <form onSubmit={handlePinSubmit} className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-semibold text-muted-foreground uppercase">Configure PIN (4-6 Digits)</label>
-              <input
-                type="password"
-                maxLength={6}
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="••••"
-                className="w-full bg-background border border-border rounded px-3 py-2 text-xs focus:outline-none focus:border-primary"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[10px] font-semibold text-muted-foreground uppercase">Confirm PIN</label>
-              <input
-                type="password"
-                maxLength={6}
-                value={pinConfirm}
-                onChange={(e) => setPinConfirm(e.target.value)}
-                placeholder="••••"
-                className="w-full bg-background border border-border rounded px-3 py-2 text-xs focus:outline-none focus:border-primary"
-              />
-            </div>
-
-            {pinErr && <p className="text-[10px] text-red-600 font-medium">{pinErr}</p>}
-            {pinMessage && <p className="text-[10px] text-emerald-600 font-medium">{pinMessage}</p>}
-
-            <button
-              type="submit"
-              className="w-full bg-primary text-primary-foreground hover:bg-primary/95 py-2.5 rounded text-xs font-semibold transition-colors"
-            >
-              Configure Security PIN
-            </button>
-          </form>
+      {/* Settings Layout Tab Rail Split */}
+      <div className="p-8 max-w-6xl w-full mx-auto space-y-8 flex-1 flex flex-col md:flex-row items-start gap-8">
+        
+        {/* Left Sub-Tab Navigation Rail */}
+        <div className="w-full md:w-48 shrink-0 flex flex-col gap-1 select-none">
+          <button
+            onClick={() => setActiveTab('security')}
+            className={`w-full text-left px-3 py-2 rounded text-xs font-semibold transition-all ${
+              activeTab === 'security'
+                ? 'bg-white dark:bg-slate-900 border border-[#E5E7EB] dark:border-slate-800 text-[#2563EB]'
+                : 'text-[#6B7280] dark:text-slate-400 hover:bg-[#F3F4F6] hover:text-[#111827]'
+            }`}
+          >
+            Security & Controls
+          </button>
+          <button
+            onClick={() => setActiveTab('audit')}
+            className={`w-full text-left px-3 py-2 rounded text-xs font-semibold transition-all ${
+              activeTab === 'audit'
+                ? 'bg-white dark:bg-slate-900 border border-[#E5E7EB] dark:border-slate-800 text-[#2563EB]'
+                : 'text-[#6B7280] dark:text-slate-400 hover:bg-[#F3F4F6] hover:text-[#111827]'
+            }`}
+          >
+            Access Audit Trail
+          </button>
         </div>
 
-        {/* Danger zone */}
-        <div className="bg-card border border-border p-6 rounded-lg space-y-6 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-50 dark:bg-red-950/20 rounded border border-red-100 dark:border-red-900">
-              <ShieldAlert className="w-4 h-4 text-red-600" />
+        {/* Right Active Tab Content Panels */}
+        <div className="flex-1 w-full space-y-8">
+          
+          {activeTab === 'security' && (
+            <div className="space-y-8">
+              {/* PIN Settings Card */}
+              <div className="bg-white dark:bg-slate-900 border border-[#E5E7EB] dark:border-slate-800 p-6 rounded shadow-[0_1px_2px_rgba(0,0,0,0.02)] space-y-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-[#F3F4F6] dark:bg-slate-800 rounded border border-[#E5E7EB] dark:border-slate-700 text-[#6B7280]">
+                    <KeyRound className="w-4 h-4 text-[#2563EB]" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-[#111827] dark:text-slate-200">Secondary Security PIN</h3>
+                    <p className="text-[11px] text-[#6B7280] dark:text-slate-400">Configure secondary lock layer credentials to encrypt vaults.</p>
+                  </div>
+                </div>
+
+                <form onSubmit={handlePinSubmit} className="space-y-4 max-w-sm">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">
+                      New PIN (4-6 Digits)
+                    </label>
+                    <input
+                      type="password"
+                      maxLength={6}
+                      value={pin}
+                      onChange={(e) => setPin(e.target.value)}
+                      placeholder="••••"
+                      className="nv-input"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">
+                      Confirm Security PIN
+                    </label>
+                    <input
+                      type="password"
+                      maxLength={6}
+                      value={pinConfirm}
+                      onChange={(e) => setPinConfirm(e.target.value)}
+                      placeholder="••••"
+                      className="nv-input"
+                    />
+                  </div>
+
+                  {pinErr && <p className="text-[10px] text-[#DC2626] font-medium">{pinErr}</p>}
+                  {pinMessage && (
+                    <p className="text-[10px] text-[#16A34A] font-medium flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5" />
+                      <span>{pinMessage}</span>
+                    </p>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="nv-btn-primary h-9 w-full font-semibold"
+                  >
+                    Setup Security PIN
+                  </button>
+                </form>
+              </div>
+
+              {/* Danger Zone Card */}
+              <div className="bg-white dark:bg-slate-900 border border-[#DC2626]/20 p-6 rounded shadow-[0_1px_2px_rgba(0,0,0,0.02)] space-y-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-[#DC2626]/5 rounded border border-[#DC2626]/10 text-[#DC2626]">
+                    <ShieldAlert className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-[#DC2626]">System Danger Operations</h3>
+                    <p className="text-[11px] text-[#6B7280]">Irreversible master vault data deletions.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 max-w-lg">
+                  <p className="text-[11px] text-[#6B7280] leading-relaxed">
+                    Executing a vault wipe command permanently deletes all relational files from storage pools, clears your ChromaDB vector index stores, and removes metadata nodes. This cannot be undone.
+                  </p>
+                  <button
+                    onClick={handleWipeVault}
+                    className="nv-btn-danger font-semibold h-9"
+                  >
+                    Wipe Document Vault
+                  </button>
+                </div>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-red-600">Danger Zone</h3>
-              <p className="text-[10px] text-muted-foreground">Irreversible security operations.</p>
+          )}
+
+          {activeTab === 'audit' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 bg-[#F3F4F6] dark:bg-slate-800 rounded border border-[#E5E7EB] dark:border-slate-700 text-[#6B7280]">
+                  <Clock className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-[#111827] dark:text-slate-200">Access Audit Trail</h3>
+                  <p className="text-[11px] text-[#6B7280]">History log of document lock updates and delete transactions.</p>
+                </div>
+              </div>
+
+              {loadingLogs ? (
+                <p className="text-center text-xs text-[#6B7280] py-12">Fetching secure audit trail logs...</p>
+              ) : auditLogs.length > 0 ? (
+                <div className="nv-table-container">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr>
+                        <th className="nv-th">Timestamp</th>
+                        <th className="nv-th">Action Executed</th>
+                        <th className="nv-th">Document Target Identifier</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#E5E7EB] dark:divide-slate-800">
+                      {auditLogs.map((log) => (
+                        <tr key={log.id} className="nv-tr-hover">
+                          <td className="nv-td text-[#6B7280]">
+                            {new Date(log.timestamp).toLocaleString()}
+                          </td>
+                          <td className="nv-td">
+                            <span className={`nv-badge ${
+                              log.action === 'DELETE' 
+                                ? 'nv-badge-danger'
+                                : log.action === 'LOCK' || log.action === 'UNLOCK'
+                                ? 'nv-badge-success'
+                                : 'nv-badge-neutral'
+                            }`}>
+                              {log.action}
+                            </span>
+                          </td>
+                          <td className="nv-td font-mono text-[10px] text-[#6B7280] truncate max-w-[200px]">
+                            {log.document_id || 'System Console Session'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-center text-xs text-[#6B7280] py-16 border border-dashed border-[#E5E7EB] dark:border-slate-800 rounded">
+                  No audits recorded. Lock documents to generate audit rows.
+                </p>
+              )}
             </div>
-          </div>
+          )}
 
-          <div className="space-y-4">
-            <p className="text-[11px] text-muted-foreground leading-normal">
-              Wiping your document vault deletes all files from local storage, removes their vector indexes from ChromaDB, and clears relational DB tables.
-            </p>
-            <button
-              onClick={handleWipeVault}
-              className="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 rounded text-xs font-semibold transition-colors"
-            >
-              Wipe Document Vault
-            </button>
-          </div>
         </div>
-      </div>
-
-      {/* Audit Log Panel */}
-      <div className="bg-card border border-border p-6 rounded-lg space-y-6 shadow-sm">
-        <div className="flex items-center gap-3">
-          <Clock className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-bold">Access Audit Log</h3>
-        </div>
-
-        {loadingLogs ? (
-          <p className="text-center text-xs text-muted-foreground py-4">Fetching audit trail...</p>
-        ) : auditLogs.length > 0 ? (
-          <div className="overflow-x-auto border border-border rounded-lg bg-background">
-            <table className="w-full text-left border-collapse text-[10px]">
-              <thead>
-                <tr className="bg-secondary/40 border-b border-border">
-                  <th className="p-3 font-semibold text-muted-foreground uppercase">Timestamp</th>
-                  <th className="p-3 font-semibold text-muted-foreground uppercase">Action</th>
-                  <th className="p-3 font-semibold text-muted-foreground uppercase">Document ID</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
-                {auditLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-muted/35 transition-colors">
-                    <td className="p-3 text-muted-foreground">
-                      {new Date(log.timestamp).toLocaleString()}
-                    </td>
-                    <td className="p-3">
-                      <span className={`px-2 py-0.5 rounded font-semibold text-[9px] ${
-                        log.action === 'DELETE' 
-                          ? 'bg-red-50 text-red-800 dark:bg-red-950/20 dark:text-red-400'
-                          : log.action === 'LOCK' || log.action === 'UNLOCK'
-                          ? 'bg-blue-50 text-blue-800 dark:bg-blue-950/20 dark:text-blue-400'
-                          : 'bg-slate-100 text-slate-800 dark:bg-slate-800/40 dark:text-slate-400'
-                      }`}>
-                        {log.action}
-                      </span>
-                    </td>
-                    <td className="p-3 font-mono text-muted-foreground truncate max-w-[150px]">
-                      {log.document_id || 'Global Session'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="text-center text-xs text-muted-foreground py-6 border border-dashed border-border rounded-lg">
-            No audits recorded. Upload or lock documents to generate logs.
-          </p>
-        )}
       </div>
     </div>
   );
