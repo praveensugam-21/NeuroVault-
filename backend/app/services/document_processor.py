@@ -48,36 +48,119 @@ class DocumentProcessor:
     @staticmethod
     def _process_with_gemini(file_path: str, file_type: str, ocr_text: str) -> Dict[str, Any]:
         import google.generativeai as genai
+        from PIL import Image
+        import io
         genai.configure(api_key=settings.GEMINI_API_KEY)
         
         model = genai.GenerativeModel('gemini-1.5-flash')
         
+        # Load raw file data for multimodal input
+        file_part = None
+        if os.path.exists(file_path):
+            if file_type.lower() == "pdf":
+                try:
+                    with open(file_path, "rb") as f:
+                        pdf_data = f.read()
+                    file_part = {
+                        "mime_type": "application/pdf",
+                        "data": pdf_data
+                    }
+                except Exception as e:
+                    logger.error(f"Failed to read PDF for Gemini multimodal input: {str(e)}")
+            elif file_type.lower() in ["image", "png", "jpg", "jpeg", "webp"]:
+                try:
+                    file_part = Image.open(file_path)
+                except Exception as e:
+                    logger.error(f"Failed to read image for Gemini multimodal input: {str(e)}")
+
         prompt = f"""
-        You are the NeuroVault AI Core Engine. Analyze this document context (OCR text below).
-        Classify this document based on our taxonomy (e.g. Aadhaar Card, PAN Card, marksheets, bills, resumes).
+        You are the NeuroVault AI Core Ingestion Engine. 
+        Analyze the provided document (raw file input or OCR text context below).
         
-        Document OCR Text:
-        {ocr_text}
+        Output a valid JSON object ONLY. Do not wrap in markdown ```json or backticks.
+        The JSON must strictly match this structural schema:
         
-        Output a valid JSON object ONLY. Do not wrap in backticks or markdown formats.
-        The JSON must contain:
-        1. "category": Main folder category string (e.g. "Identity Documents", "Academic Records", "Professional Documents", "Financial Documents", "Medical Records", "Property & Legal", "Vehicle Documents", "Personal Notes").
-        2. "document_type": Sub-type string (e.g. "Aadhaar Card", "PAN Card", "Driving Licence", "Class 10 Marksheet", "Class 12 Marksheet", "Degree Certificate", "Resume", "Offer Letter", "Pay Slip", "Bank Statement", "Prescription", "Electricity Bill", "Vehicle RC", "Insurance Policy", "Unclassified").
+        1. "category": Main folder category string. Choose EXACTLY one of:
+           - "Identity Documents"
+           - "Academic Records"
+           - "Professional Documents"
+           - "Financial Documents"
+           - "Medical Records"
+           - "Property & Legal"
+           - "Vehicle Documents"
+           - "Personal Notes"
+           
+        2. "document_type": Sub-type string. Choose EXACTLY one of:
+           - "Aadhaar Card", "PAN Card", "Driving Licence", "Class 10 Marksheet", "Class 12 Marksheet", "Degree Certificate", "Resume", "Offer Letter", "Pay Slip", "Bank Statement", "Prescription", "Electricity Bill", "Vehicle RC", "Insurance Policy", "Unclassified"
+           
         3. "confidence_score": Float between 0.0 and 1.0.
-        4. "extracted_fields": JSON dict containing specific schema fields (e.g. name, dob, pan_number, total_marks, net_pay, etc.).
-        5. "summary_card": 3-5 line human-readable natural language summary of the document contents.
-        6. "auto_tags": List of hashtags starting with # (e.g. ["#identity", "#aadhaar", "#government"]).
+        
+        4. "extracted_fields": JSON dictionary. You MUST strictly use these key names based on "document_type":
+           - For "Aadhaar Card":
+             * "aadhaar_number": 12-digit string block without spaces
+             * "name": Registered owner full name string
+             * "dob": Birth date string (YYYY-MM-DD format)
+             * "gender": "Male" or "Female" or "Other"
+             * "address": Complete address string
+           - For "PAN Card":
+             * "pan_number": 10-character alphanumeric ID string
+             * "name": Holder name string
+             * "father_name": Father name string
+             * "dob": Birth date string (YYYY-MM-DD format)
+           - For "Driving Licence":
+             * "dl_number": License ID string
+             * "name": License holder name string
+             * "dob": Birth date string (YYYY-MM-DD format)
+             * "expiry_date": License expiry date string (YYYY-MM-DD format)
+             * "vehicle_classes": Array of strings (e.g. ["MCWG", "LMV"])
+           - For "Class 10 Marksheet" or "Class 12 Marksheet":
+             * "percentage": Overall percentage float (e.g. 84.50)
+             * "total_marks": Max total marks integer (e.g. 500)
+             * "marks_obtained": Total marks obtained integer (e.g. 420)
+             * "roll_number": Marksheet roll number string
+             * "subjects": Array of objects: [{"subject_name": "Physics", "marks_obtained": 85, "max_marks": 100}]
+           - For "Resume":
+             * "name": Person full name string
+             * "email": Contact email address string
+             * "skills": Array of key skills strings
+             * "experience": Array of objects: [{"company_name": "Tech Co", "tenure": "2 years"}]
+           - For "Offer Letter":
+             * "company_name": Employer company name string
+             * "ctc": CTC compensation string or number
+             * "joining_date": Joining date string (YYYY-MM-DD format)
+             * "role": Designation/Role string
+           - For "Bank Statement":
+             * "account_number": Account number ID string
+             * "bank_name": Bank institute name string
+             * "balance": Balance float value
+           - For "Vehicle RC":
+             * "registration_number": Vehicle registration plate string
+             * "owner_name": Registered owner name string
+             * "engine_number": Engine serial ID string
+             * "chassis_number": Chassis serial ID string
+           - For "Unclassified" or others:
+             * Standard descriptive key-value string/number pairs.
+             
+        5. "summary_card": 3-5 line natural language summary of the document contents.
+        6. "auto_tags": List of hashtags starting with # (e.g. ["#identity", "#government"]).
         7. "action_items": Object containing:
             - "expiry_date": ISO date string (YYYY-MM-DD) or null.
             - "tasks": List of detected tasks or deadlines.
         8. "entities": Object with lists of PERSON, ORG, DATE, ID_NUMBER, GPE.
-        9. "anomalies": List of strings detailing any blur, tampering flags, or missing key fields.
+        9. "anomalies": List of strings detailing missing fields or quality alerts.
+        
+        OCR Context Fallback:
+        {ocr_text}
         """
 
-        response = model.generate_content(prompt)
+        contents = [prompt]
+        if file_part:
+            contents.append(file_part)
+
+        response = model.generate_content(contents)
         text = response.text.strip()
         
-        # Clean up any potential markdown wraps
+        # Clean up code blocks markdown wraps
         if text.startswith("```"):
             text = re.sub(r"^```(?:json)?\n", "", text)
             text = re.sub(r"\n```$", "", text)
