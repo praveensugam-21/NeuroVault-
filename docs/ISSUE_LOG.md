@@ -144,9 +144,6 @@ This file is a running log of all failures, errors, installation bugs, and logic
 - **Phase:** Docker Run
 - **File:** [requirements.txt](file:///e:/Desktop/AI%20CHATBOT/backend/requirements.txt)
 - **Error Message:**
-  ```text
-  ImportError: email-validator is not installed, run `pip install 'pydantic[email]'`
-  ```
 - **Root Cause:**
   The User schemas in `app/schemas/user.py` use Pydantic's `EmailStr` class, which requires `email-validator` to be installed. The package was not listed in `requirements.txt`.
 - **What I Tried:**
@@ -155,6 +152,54 @@ This file is a running log of all failures, errors, installation bugs, and logic
   Appended `email-validator` to `requirements.txt` and rebuilt the backend container.
 - **Learning:**
   Pydantic core features like `EmailStr` require extra validation packages. Ensure they are listed in dependencies.
+
+## Issue #007 — PyTorch and torchvision Version Mismatch
+- **Date:** 2026-07-02
+- **Phase:** Docker Runtime Ingestion
+- **File:** [Dockerfile](file:///e:/Desktop/AI%20CHATBOT/backend/Dockerfile)
+- **Error Message:**
+  ```text
+  ERROR:neurovault.ocr:Failed to initialize EasyOCR: operator torchvision::nms does not exist
+  ```
+- **Root Cause:**
+  `torch` (CPU) and `easyocr` (which auto-installed regular `torchvision`) were installed in separate steps, resulting in incompatible torchvision wheels. This broke the torchvision C++ extensions loader, preventing EasyOCR from starting.
+- **What I Tried:**
+  - Verified PyTorch torchvision compilation flags.
+- **Fix:**
+  Modified the Dockerfile to install both `torch` and `torchvision` simultaneously from the PyTorch CPU index wheel repository:
+  `pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu`
+- **Learning:**
+  Always install companion packages (like torchvision, torchaudio) together with PyTorch from the same repository index to maintain internal ABI compatibility.
+
+## Issue #008 — Scanned PDFs Ingestion Failure
+- **Date:** 2026-07-02
+- **Phase:** Document Ingestion
+- **File:** [ocr_service.py](file:///e:/Desktop/AI%20CHATBOT/backend/app/services/ocr_service.py)
+- **Error Message:**
+  ```text
+  WARNING:neurovault.ocr:Local EasyOCR does not support PDF files directly. Returning empty text.
+  ```
+- **Root Cause:**
+  Digital text parsers like `pypdf` return empty text for scanned PDFs, and local `EasyOCR` only handles image file formats. Scanned PDFs had empty OCR text outputs, resulting in classification failures.
+- **What I Tried:**
+  - Attempted to pass raw PDFs to EasyOCR reader, which crashed.
+- **Fix:**
+  Updated `OCRService` to extract page images from scanned PDFs and run `EasyOCR` on those image buffers, returning parsed text.
+- **Learning:**
+  Scanned PDFs are essentially collections of images. Extract the images first before passing them to local image OCR engines.
+
+## Issue #009 — Artificial Client-Side Ingestion Delays
+- **Date:** 2026-07-02
+- **Phase:** Frontend UX
+- **File:** [Upload.tsx](file:///e:/Desktop/AI%20CHATBOT/frontend/src/pages/Upload.tsx)
+- **Root Cause:**
+  The React client had a simulated delay loop that waited 350ms per step regardless of how fast the backend completed processing.
+- **What I Tried:**
+  - Reduced simulation timers, which still caused artificial latency.
+- **Fix:**
+  Implemented polling checks targeting `/api/documents/{id}` every 800ms, immediately fast-forwarding the progress stepper to completion once the database status reaches `COMPLETE`.
+- **Learning:**
+  Avoid artificial hardcoded timers in processing workflows; poll backend status endpoints and update UI states dynamically.
 
 
 
