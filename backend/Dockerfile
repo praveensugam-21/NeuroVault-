@@ -17,10 +17,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download ML models so they are baked into the image and never downloaded at runtime
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
-RUN python -c "import easyocr; easyocr.Reader(['en', 'hi'])"
-RUN python -m spacy download en_core_web_sm
 
 # Copy application code
 COPY ./app ./app
