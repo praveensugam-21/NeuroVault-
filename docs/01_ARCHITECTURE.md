@@ -47,7 +47,7 @@ NeuroVault AI is designed as a modular, local-first intelligence application tha
                    ▼
          ┌──────────────────────────────────────┐
          │          EXTERNAL AI LAYER           │
-         │  Google Gemini Vision / Whisper /    │
+         │   Whisper AI / Local Ollama /        │
          │  spaCy NER / Sentence Transformers   │
          └──────────────────────────────────────┘
 ```
@@ -90,7 +90,7 @@ Represents tags associated with documents for fast categorization.
 - `tag_name`: String (e.g., `#identity`, `#academic`)
 
 ### D. `entities`
-Stores specific entities (people, organizations, dates, document numbers) extracted via spaCy and Gemini.
+Stores specific entities (people, organizations, dates, document numbers) extracted via spaCy.
 - `id`: Integer (Primary Key)
 - `document_id`: String (Foreign Key -> `documents.id`)
 - `entity_type`: String (PERSON, ORG, DATE, ID_NUMBER)
@@ -141,9 +141,9 @@ When a file is uploaded, it transitions through:
 1. **API Router**: Receives file, generates a UUID, saves to `uploads/` directory, creates database record with status `PROCESSING`.
 2. **Pipeline Manager**: Launches an asynchronous worker thread/asyncio task to process the file step-by-step.
 3. **Pre-processing Engine**: If it is an image, it uses OpenCV to denoise, deskew, and enhance contrast.
-4. **Vision/OCR Engine**: Gemini Vision API reads the document. If it fails or is offline, EasyOCR processes it.
+4. **Vision/OCR Engine**: Local EasyOCR reads the document images (or pypdf extracts digital PDF layers).
 5. **Taxonomy Classifier**: Decides if it is an Aadhaar, Class 10 mark sheet, etc.
-6. **Field Extractor**: Calls Gemini or local parser to extract type-specific JSON fields.
+6. **Field Extractor**: Calls local Ollama to extract type-specific JSON fields.
 7. **Validation & Quality Engine**: Assesses formatting rules and computes confidence.
 8. **Entity Extractor & Embedder**: Extracts named entities via spaCy and computes vector embeddings using `all-MiniLM-L6-v2`.
 9. **Knowledge Graph Linker**: Queries database for other records matching extracted entities, and creates matching relationship edges.

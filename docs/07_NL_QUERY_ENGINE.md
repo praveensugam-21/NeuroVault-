@@ -23,7 +23,7 @@ The assistant parses user queries and maps them to documents using semantic vect
 
 ## 2. Local Fallback Resolver (Online/Offline Resilience)
 
-To ensure the system works offline or without a Gemini API Key, we implement a rule-based query parser inside `RAGPipeline._answer_with_local_rules`.
+To ensure the system works offline or without a local Ollama service running, we implement a rule-based query parser inside `RAGPipeline._answer_with_local_rules`.
 
 ### How the Local Resolver Works:
 1. **Keyword Analysis:** Uses regular expressions to match intent (e.g. checks if query contains "pan", "aadhaar", "marks", "job", "expire").

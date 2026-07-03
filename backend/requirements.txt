@@ -8,7 +8,6 @@ python-jose[cryptography]
 python-dotenv
 chromadb
 sentence-transformers
-google-generativeai
 pillow
 pytest
 bcrypt
@@ -17,3 +16,4 @@ pypdf
 easyocr
 spacy
 opencv-python-headless
+httpx

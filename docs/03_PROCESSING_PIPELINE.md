@@ -11,7 +11,7 @@ This document explains the step-by-step lifecycle of a document as it passes thr
                                              │
  ┌───────────────────────────────────────────┘
  ▼
- 3. OCR / Vision Analysis (Gemini / EasyOCR) ─► 4. Doc Type Classification
+ 3. OCR / Vision Analysis (EasyOCR) ─► 4. Doc Type Classification
                                                           │
  ┌────────────────────────────────────────────────────────┘
  ▼
@@ -48,14 +48,14 @@ This document explains the step-by-step lifecycle of a document as it passes thr
   - Thresholding/Contrast enhancement: Improve legibility of faded text.
 
 ### Step 3: OCR / Vision AI Analysis
-- **Primary:** Google Gemini Vision API. It receives the image bytes and reads the text directly, maintaining visual layout understanding.
-- **Fallback:** If Gemini fails or is unconfigured, the system runs local **EasyOCR** to parse the raw text lines offline.
+- **Primary:** Digital PDF text-layer extraction via `pypdf`.
+- **Fallback for Scanned Images/PDFs:** Runs local **EasyOCR** to scan text lines offline.
 
 ### Step 4: Document Type Classification
 - **Action:** The text contents are processed to identify the document type from our 50+ taxonomy classes (e.g., detecting terms like "Permanent Account Number Card" or "Aadhaar" or "marksheet"). It outputs the classification alongside a confidence level (High / Medium / Low).
 
 ### Step 5: Structured Field Extraction
-- **Action:** Map the text to the target category schema (defined in `02_DOCUMENT_TAXONOMY.md`). If Gemini is used, it utilizes structured schema outputs. If using fallback, it uses targeted regular expressions (Regex) to extract the key values.
+- **Action:** Map the text to the target category schema (defined in `02_DOCUMENT_TAXONOMY.md`). It uses local Ollama to extract JSON fields. If Ollama fails, it falls back to targeted regular expressions (Regex) to extract the key values.
 
 ### Step 6: Data Validation
 - **Action:** Extracted fields are parsed against standard format rules:

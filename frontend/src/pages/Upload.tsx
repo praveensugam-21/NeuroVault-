@@ -22,7 +22,7 @@ export const Upload: React.FC = () => {
   const pipelineSteps: PipelineStep[] = [
     { label: 'File Upload & Verification', desc: 'Validating checksum payloads and verifying MIME-headers.' },
     { label: 'OpenCV Image Enhancements', desc: 'Executing contrast stretch, blur filters, and tilt de-skewing.' },
-    { label: 'OCR & Text Processing', desc: 'Running Gemini AI OCR parser to extract raw textual lines.' },
+    { label: 'OCR & Text Processing', desc: 'Running local OCR parser to extract raw textual lines.' },
     { label: 'Document Classification', desc: 'Comparing document headers against our taxonomy classifier rules.' },
     { label: 'JSON Fields Extraction', desc: 'Building custom metadata fields using RAG target formats.' },
     { label: 'Integrity Field Checks', desc: 'Cross-verifying date strings, identities, and unique identification structures.' },

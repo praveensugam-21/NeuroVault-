@@ -4,7 +4,8 @@ from typing import Optional
 
 class Settings(BaseSettings):
     ENV_MODE: str = "development"
-    GEMINI_API_KEY: Optional[str] = None
+    OLLAMA_BASE_URL: str = "http://ollama:11434"
+    OLLAMA_MODEL: str = "qwen2.5:1.5b"
     
     # JWT Security Settings
     JWT_SECRET_KEY: str = "supersecretjwtkeyforhackathonauth123456"

@@ -1,23 +1,16 @@
 # NeuroVault AI — AI & NLP Tools Deep Dive
 
-This document explains the roles of the AI tools, models, and libraries used inside the NeuroVault AI engine. It covers what they are, why we use them, and how they function.
+This document explains the roles of the local AI tools, models, and libraries used inside the NeuroVault AI engine. It covers what they are, why we use them, and how they function.
 
 ---
 
-## 1. Google Gemini Vision API (Primary Understanding Engine)
+## 1. Local OCR Engine (EasyOCR & Direct PDF Extraction)
 
 ### What it is
-Google's Gemini model series includes native multimodal vision capabilities. Instead of treating OCR (text scanning) and reasoning (understanding text) as two separate steps, Gemini does them simultaneously.
+NeuroVault uses a local text extraction engine. For digital documents (like digital PDFs), it extracts text layers directly using `pypdf`. For scanned documents or image uploads, it uses **EasyOCR** (built on PyTorch, running CRAFT text detection and ResNet+LSTM recognition models) entirely locally on your device.
 
 ### Why we use it
-Traditional pipelines use an OCR library (like Tesseract) to get raw text, followed by an LLM to parse that text. This fails when:
-1. The OCR engine misreads text (e.g. `O` instead of `0`, or misses decimal points in mark sheets).
-2. The layout is complex (e.g. multi-column medical reports or side-by-side transaction tables).
-
-Gemini Vision looks at the **document image** directly, understands its visual formatting, handles low-contrast scans, and directly outputs structured JSON schemas with high accuracy.
-
-### Fallback Mechanism
-If the Gemini API key is missing, rate-limited, or calls fail, the pipeline falls back to **EasyOCR** for local text extraction, paired with rule-based heuristics and local fallback processing.
+To guarantee the system is **100% local-first and operational offline**, all text extraction runs on your machine. EasyOCR allows us to handle image-based documents without needing external network calls or cloud API keys.
 
 ---
 
@@ -31,17 +24,7 @@ For personal notes, users often want to record quick voice memos (e.g., "Note to
 
 ---
 
-## 3. EasyOCR (Offline OCR Backup)
-
-### What it is
-EasyOCR is a python library for Optical Character Recognition. It is built on PyTorch and utilizes deep learning models: CRAFT (for text detection) and ResNet+LSTM (for text recognition).
-
-### Why we use it
-To guarantee the system is **100% local-first and operational offline**, we need a local OCR engine. If Gemini is unavailable, EasyOCR scans document images locally to extract raw text, which we can parse with local regex engines.
-
----
-
-## 4. spaCy NER (Named Entity Recognition)
+## 3. spaCy NER (Named Entity Recognition)
 
 ### What it is
 spaCy is an industrial-strength Natural Language Processing library in Python. It includes fast pre-trained pipeline models capable of tagging parts of speech, parsing dependencies, and identifying Named Entities (NER).
@@ -57,7 +40,7 @@ These extracted entities form the basis of our **Knowledge Graph Linking** logic
 
 ---
 
-## 5. Sentence Transformers (Vector Embeddings)
+## 4. Sentence Transformers (Vector Embeddings)
 
 ### What it is
 Sentence Transformers is a Python framework for state-of-the-art sentence, text, and image embeddings. We use the model `all-MiniLM-L6-v2`.
@@ -70,15 +53,15 @@ This powers our semantic search database (ChromaDB) to retrieve relevant records
 
 ---
 
-## 6. LangChain & RAG Pipeline Orchestration
+## 5. Local LLM (Ollama) & RAG Pipeline Orchestration
 
 ### What it is
-LangChain is a popular framework for building applications powered by language models.
+Ollama is a lightweight, extensible framework for running large language models locally. We utilize the `qwen2.5:1.5b` model running locally.
 
 ### Why we use it
-It simplifies the RAG (Retrieval-Augmented Generation) pipeline:
+It orchestrates the RAG (Retrieval-Augmented Generation) pipeline:
 1. Accepts user question.
 2. Embeds the question.
 3. Queries ChromaDB for top-K matching documents.
-4. Formatting the system instruction, documents context, and query into a structured prompt template.
-5. Sending it to the LLM (Gemini) and returning a clean, cited response.
+4. Formats the system instruction, documents context, and query into a structured prompt template.
+5. Sends it to the local LLM (Ollama) and returns a clean, cited response.

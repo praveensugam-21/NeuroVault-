@@ -84,15 +84,7 @@ class OCRService:
             except Exception as e:
                 logger.warning(f"PDF text extraction failed: {str(e)}")
 
-        # For PDFs and Images:
-        # Check if we can use Gemini (primary)
-        if settings.GEMINI_API_KEY:
-            try:
-                return OCRService._extract_via_gemini(file_path, file_type)
-            except Exception as e:
-                logger.warning(f"Gemini OCR failed, falling back to local OCR: {str(e)}")
-
-        # Fallback to local OCR if allowed
+        # Run local OCR if allowed
         if settings.ENABLE_LOCAL_OCR:
             try:
                 if file_type.lower() == "pdf":
@@ -103,43 +95,8 @@ class OCRService:
                 logger.error(f"Local OCR extraction failed: {str(e)}")
                 return ""
 
-        logger.warning("No OCR keys or local engines available. Returning empty text.")
+        logger.warning("No local OCR engines available. Returning empty text.")
         return ""
-
-    @staticmethod
-    def _extract_via_gemini(file_path: str, file_type: str) -> str:
-        """
-        Uses Gemini 1.5 Flash to extract raw readable text from the file.
-        """
-        import google.generativeai as genai
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        
-        # Load model
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        
-        prompt = (
-            "You are an advanced OCR engine. Read this document image or file and output "
-            "all readable text inside it verbatim. Keep table layouts and structures as plain text."
-        )
-
-        # Gemini supports PDF directly if sent as bytes
-        if file_type.lower() == "pdf":
-            with open(file_path, "rb") as f:
-                pdf_data = f.read()
-            
-            response = model.generate_content([
-                prompt,
-                {
-                    "mime_type": "application/pdf",
-                    "data": pdf_data
-                }
-            ])
-        else:
-            # Assume image file
-            image = Image.open(file_path)
-            response = model.generate_content([prompt, image])
-            
-        return response.text if response.text else ""
 
     @staticmethod
     def _extract_via_local_ocr(file_path: str) -> str:

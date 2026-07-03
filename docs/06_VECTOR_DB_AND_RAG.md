@@ -56,8 +56,8 @@ User Query ───────────────────────
           Assemble System Context Prompt + Citations List
                                    │
                                    ▼
-                     Generate Cited Response
-               (via Gemini API or Local Rules Engine)
+                      Generate Cited Response
+               (via local Ollama or Local Rules Engine)
                                    │
                                    ▼
                       Display Answer to User

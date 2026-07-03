@@ -14,7 +14,7 @@ class RAGPipeline:
     def answer_query(db: Session, user_id: int, question: str) -> Dict[str, Any]:
         """
         Retrieves relevant document fragments from vector database
-        and feeds them into the reasoning LLM (Gemini) to produce cited answers.
+        and feeds them into the reasoning LLM (Ollama) to produce cited answers.
         """
         # Step 1: Semantic search in ChromaDB
         search_hits = EmbeddingService.search(user_id=user_id, query=question, top_k=3)
@@ -59,28 +59,24 @@ class RAGPipeline:
 
         context_text = "\n\n---\n\n".join(context_parts)
 
-        # Step 2: Query Gemini or Fallback
-        if settings.GEMINI_API_KEY:
-            try:
-                return RAGPipeline._answer_with_gemini(question, context_text, citations)
-            except Exception as e:
-                logger.error(f"Gemini RAG failed: {str(e)}. Falling back to local rules.")
+        # Step 2: Query Ollama RAG
+        try:
+            return RAGPipeline._answer_with_ollama(question, context_text, citations)
+        except Exception as e:
+            logger.error(f"Ollama RAG failed: {str(e)}. Falling back to local rules.")
 
         # Local keyword/schema matching fallback (accurate RAG simulation)
         return RAGPipeline._answer_with_local_rules(question, citations, db)
 
     @staticmethod
-    def _answer_with_gemini(question: str, context: str, citations: List[Dict[str, Any]]) -> Dict[str, Any]:
-        import google.generativeai as genai
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        
-        model = genai.GenerativeModel('gemini-2.5-flash')
+    def _answer_with_ollama(question: str, context: str, citations: List[Dict[str, Any]]) -> Dict[str, Any]:
+        from app.services.ollama_service import OllamaService
         
         prompt = f"""
-        You are the NeuroVault AI Memory Assistant, a living personal knowledge intelligence engine.
+        You are the NeuroVault AI Memory Assistant, a secure personal knowledge database.
         Answer the user's question using ONLY the retrieved document contexts below. 
         Cite the document names when reporting facts (e.g. "According to your Aadhaar Card, your address is...").
-        If the information is not present in the context, state that you cannot find it in the vault.
+        If the information is not present in the contexts, state that you cannot find it in the vault.
         
         Retrieved Document Contexts:
         {context}
@@ -90,9 +86,12 @@ class RAGPipeline:
         Provide a professional, clear, and cited response.
         """
         
-        response = model.generate_content(prompt)
+        answer = OllamaService.generate_completion(prompt)
+        if not answer:
+            raise RuntimeError("Ollama returned empty response.")
+            
         return {
-            "answer": response.text.strip(),
+            "answer": answer,
             "citations": citations
         }
 

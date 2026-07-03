@@ -35,47 +35,22 @@ class DocumentProcessor:
         """
         filename = (original_name or os.path.basename(file_path)).lower()
         
-        # If API key is available, use Gemini Vision/Text for processing
-        if settings.GEMINI_API_KEY:
-            try:
-                return DocumentProcessor._process_with_gemini(file_path, file_type, ocr_text)
-            except Exception as e:
-                logger.warning(f"Gemini processing failed, falling back to rule-based parser: {str(e)}")
+        # Primary local inference via Ollama
+        try:
+            return DocumentProcessor._process_with_ollama(ocr_text)
+        except Exception as e:
+            logger.warning(f"Ollama processing failed, falling back to rule-based parser: {str(e)}")
         
         # Rule-based fallback simulator
         return DocumentProcessor._process_with_rules(filename, ocr_text)
 
     @staticmethod
-    def _process_with_gemini(file_path: str, file_type: str, ocr_text: str) -> Dict[str, Any]:
-        import google.generativeai as genai
-        from PIL import Image
-        import io
-        genai.configure(api_key=settings.GEMINI_API_KEY)
+    def _process_with_ollama(ocr_text: str) -> Dict[str, Any]:
+        from app.services.ollama_service import OllamaService
         
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        
-        # Load raw file data for multimodal input
-        file_part = None
-        if os.path.exists(file_path):
-            if file_type.lower() == "pdf":
-                try:
-                    with open(file_path, "rb") as f:
-                        pdf_data = f.read()
-                    file_part = {
-                        "mime_type": "application/pdf",
-                        "data": pdf_data
-                    }
-                except Exception as e:
-                    logger.error(f"Failed to read PDF for Gemini multimodal input: {str(e)}")
-            elif file_type.lower() in ["image", "png", "jpg", "jpeg", "webp"]:
-                try:
-                    file_part = Image.open(file_path)
-                except Exception as e:
-                    logger.error(f"Failed to read image for Gemini multimodal input: {str(e)}")
-
         prompt = f"""
-        You are the NeuroVault AI Core Ingestion Engine. 
-        Analyze the provided document (raw file input or OCR text context below).
+        You are the NeuroVault local document metadata extraction engine.
+        Analyze this document OCR text and categorize, summarize, and extract fields into a JSON object matching this schema strictly.
         
         Output a valid JSON object ONLY. Do not wrap in markdown ```json or backticks.
         The JSON must strictly match this structural schema:
@@ -118,12 +93,12 @@ class DocumentProcessor:
              * "total_marks": Max total marks integer (e.g. 500)
              * "marks_obtained": Total marks obtained integer (e.g. 420)
              * "roll_number": Marksheet roll number string
-             * "subjects": Array of objects: [{"subject_name": "Physics", "marks_obtained": 85, "max_marks": 100}]
+             * "subjects": Array of objects: [ {{"subject_name": "Physics", "marks_obtained": 85, "max_marks": 100}} ]
            - For "Resume":
              * "name": Person full name string
              * "email": Contact email address string
              * "skills": Array of key skills strings
-             * "experience": Array of objects: [{"company_name": "Tech Co", "tenure": "2 years"}]
+             * "experience": Array of objects: [ {{"company_name": "Tech Co", "tenure": "2 years"}} ]
            - For "Offer Letter":
              * "company_name": Employer company name string
              * "ctc": CTC compensation string or number
@@ -138,7 +113,7 @@ class DocumentProcessor:
              * "owner_name": Registered owner name string
              * "engine_number": Engine serial ID string
              * "chassis_number": Chassis serial ID string
-           - For "Unclassified" or others:
+           - For others:
              * Standard descriptive key-value string/number pairs.
              
         5. "summary_card": 3-5 line natural language summary of the document contents.
@@ -149,23 +124,20 @@ class DocumentProcessor:
         8. "entities": Object with lists of PERSON, ORG, DATE, ID_NUMBER, GPE.
         9. "anomalies": List of strings detailing missing fields or quality alerts.
         
-        OCR Context Fallback:
+        Document OCR Text:
         {ocr_text}
         """
 
-        contents = [prompt]
-        if file_part:
-            contents.append(file_part)
-
-        response = model.generate_content(contents)
-        text = response.text.strip()
-        
-        # Clean up code blocks markdown wraps
-        if text.startswith("```"):
-            text = re.sub(r"^```(?:json)?\n", "", text)
-            text = re.sub(r"\n```$", "", text)
-        
-        return json.loads(text)
+        response_text = OllamaService.generate_completion(prompt, format_json=True)
+        if not response_text:
+            raise RuntimeError("Ollama returned empty response.")
+            
+        # Clean markdown wraps if any
+        if response_text.startswith("```"):
+            response_text = re.sub(r"^```(?:json)?\n", "", response_text)
+            response_text = re.sub(r"\n```$", "", response_text)
+            
+        return json.loads(response_text)
 
     @staticmethod
     def _process_with_rules(filename: str, ocr_text: str) -> Dict[str, Any]:
