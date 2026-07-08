@@ -1,20 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List
+from datetime import timedelta
+
 from app.database import get_db
 from app.models.user import User
 from app.models.audit_log import AuditLog
 from app.schemas.user import UserCreate, UserResponse, Token, PINSetup, PINVerify
 from app.services.security import SecurityService
-
+from app.config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(user_in: UserCreate, db: Session = Depends(get_db)):
     """
-    Registers a new account. Hashes the password.
+    Register a new account within this deployment.
+    The first account registered automatically becomes admin.
+    Passwords are hashed using Argon2id.
     """
     existing_user = db.query(User).filter(User.email == user_in.email).first()
     if existing_user:
@@ -22,21 +27,31 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Account with this email already registered"
         )
-    
+
+    # First user in the deployment becomes admin
+    is_first_user = db.query(User).count() == 0
+
     hashed_password = SecurityService.get_password_hash(user_in.password)
     user = User(
         email=user_in.email,
-        hashed_password=hashed_password
+        hashed_password=hashed_password,
+        is_admin=is_first_user
     )
     db.add(user)
     db.commit()
     db.refresh(user)
     return user
 
+
 @router.post("/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db)
+):
     """
-    Standard OAuth2 password flow login. Returns JWT access token.
+    Standard OAuth2 password login.
+    Returns a short-lived JWT access token (15 min) and a long-lived refresh token (30 days).
     """
     user = db.query(User).filter(User.email == form_data.username).first()
     if not user or not SecurityService.verify_password(form_data.password, user.hashed_password):
@@ -45,38 +60,116 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
+    # Re-hash password with current Argon2 parameters if it was hashed with weaker settings
+    if SecurityService.password_needs_rehash(user.hashed_password):
+        user.hashed_password = SecurityService.get_password_hash(form_data.password)
+
+    # Generate access + refresh token pair
     access_token = SecurityService.create_access_token(data={"sub": user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
+    raw_refresh, hashed_refresh = SecurityService.create_refresh_token()
+
+    # Store hashed refresh token (only the hash, never the raw value)
+    user.refresh_token_hash = hashed_refresh
+    db.commit()
+
+    # Audit log
+    audit = AuditLog(
+        user_id=user.id,
+        action="LOGIN",
+        ip_address=request.client.host if request.client else None
+    )
+    db.add(audit)
+    db.commit()
+
+    return {
+        "access_token": access_token,
+        "refresh_token": raw_refresh,
+        "token_type": "bearer"
+    }
+
+
+@router.post("/refresh", response_model=Token)
+def refresh_token(refresh_token_str: str, db: Session = Depends(get_db)):
+    """
+    Exchange a valid refresh token for a new access token + rotated refresh token.
+    The old refresh token is immediately invalidated (rotation prevents replay attacks).
+    """
+    invalid_exc = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or expired refresh token"
+    )
+
+    # Find user with a stored refresh token hash
+    users = db.query(User).filter(User.refresh_token_hash.isnot(None)).all()
+    matched_user = None
+    for u in users:
+        if SecurityService.verify_refresh_token(refresh_token_str, u.refresh_token_hash):
+            matched_user = u
+            break
+
+    if not matched_user:
+        raise invalid_exc
+
+    # Rotate: generate new token pair
+    access_token = SecurityService.create_access_token(data={"sub": matched_user.email})
+    raw_refresh, hashed_refresh = SecurityService.create_refresh_token()
+    matched_user.refresh_token_hash = hashed_refresh
+    db.commit()
+
+    return {
+        "access_token": access_token,
+        "refresh_token": raw_refresh,
+        "token_type": "bearer"
+    }
+
+
+@router.post("/logout", status_code=status.HTTP_200_OK)
+def logout(
+    current_user: User = Depends(SecurityService.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Invalidate the user's refresh token. Future refresh requests will fail until next login.
+    """
+    current_user.refresh_token_hash = None
+    audit = AuditLog(user_id=current_user.id, action="LOGOUT")
+    db.add(audit)
+    db.commit()
+    return {"message": "Logged out successfully. Refresh token revoked."}
+
 
 @router.post("/pin/setup", status_code=status.HTTP_200_OK)
-def setup_pin(pin_data: PINSetup, current_user: User = Depends(SecurityService.get_current_user), db: Session = Depends(get_db)):
-    """
-    Configures a secondary PIN to lock/unlock highly sensitive files.
-    """
+def setup_pin(
+    pin_data: PINSetup,
+    current_user: User = Depends(SecurityService.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Configure a secondary PIN for locking/unlocking sensitive documents."""
     hashed_pin = SecurityService.get_password_hash(pin_data.pin)
     current_user.pin_hash = hashed_pin
     db.commit()
     return {"message": "Security PIN successfully configured."}
 
+
 @router.post("/pin/verify", status_code=status.HTTP_200_OK)
-def verify_pin(pin_data: PINVerify, current_user: User = Depends(SecurityService.get_current_user)):
-    """
-    Verifies secondary security PIN.
-    """
+def verify_pin(
+    pin_data: PINVerify,
+    current_user: User = Depends(SecurityService.get_current_user)
+):
+    """Verify the secondary security PIN."""
     if not current_user.pin_hash:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No security PIN has been set up for this account."
         )
-        
     if not SecurityService.verify_password(pin_data.pin, current_user.pin_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect security PIN."
         )
-        
     return {"message": "PIN verified."}
+
 
 @router.get("/audit-logs", response_model=List[dict])
 def get_audit_logs(
@@ -84,18 +177,20 @@ def get_audit_logs(
     db: Session = Depends(get_db)
 ):
     """
-    Returns list of audit logs for security transparency.
+    Returns the last 50 security audit log entries for the current user.
+    Gives complete transparency over who did what and when.
     """
     logs = db.query(AuditLog).filter(
         AuditLog.user_id == current_user.id
-    ).order_by(AuditLog.timestamp.desc()).limit(30).all()
-    
+    ).order_by(AuditLog.timestamp.desc()).limit(50).all()
+
     return [
         {
             "id": l.id,
             "action": l.action,
             "document_id": l.document_id,
+            "ip_address": l.ip_address,
             "timestamp": l.timestamp
-        } for l in logs
+        }
+        for l in logs
     ]
-

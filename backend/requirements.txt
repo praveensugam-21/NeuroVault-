@@ -17,3 +17,13 @@ easyocr
 spacy
 opencv-python-headless
 httpx
+# PostgreSQL driver
+psycopg2-binary
+# Database migrations
+alembic
+# Argon2id password hashing (more secure than bcrypt)
+argon2-cffi
+# AES-256 field-level encryption
+cryptography
+# Google Gemini SDK
+google-generativeai
