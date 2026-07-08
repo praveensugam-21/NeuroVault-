@@ -1,12 +1,25 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
-import { FolderLock, AlertCircle, Loader2 } from 'lucide-react';
+import { FolderLock, AlertCircle, Loader2, Globe } from 'lucide-react';
+import { getApiUrl } from '../services/api';
 
 export const Login: React.FC = () => {
   const { login, register, error, clearError, loading } = useAuthStore();
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [serverUrl, setServerUrl] = useState(() => {
+    return localStorage.getItem('custom_api_url') || getApiUrl();
+  });
+
+  const handleServerUrlChange = (value: string) => {
+    setServerUrl(value);
+    if (value.trim()) {
+      localStorage.setItem('custom_api_url', value.trim());
+    } else {
+      localStorage.removeItem('custom_api_url');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,10 +48,10 @@ export const Login: React.FC = () => {
             <FolderLock className="w-5 h-5 text-[#2563EB]" />
           </div>
           <h2 className="text-lg font-semibold tracking-tight text-[#111827] dark:text-slate-100">
-            NeuroVault AI
+            NeuroVault
           </h2>
           <p className="text-xs text-[#6B7280] dark:text-slate-400">
-            Personal Knowledge Reasoning Layer
+            Secure Personal Document Vault
           </p>
         </div>
 
@@ -71,6 +84,22 @@ export const Login: React.FC = () => {
               className="nv-input"
               required
               disabled={loading}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-[#6B7280] dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
+              <Globe className="w-3 h-3 text-[#6B7280] dark:text-slate-400" />
+              Server URL
+            </label>
+            <input
+              type="url"
+              value={serverUrl}
+              onChange={(e) => handleServerUrlChange(e.target.value)}
+              placeholder="http://localhost:8001"
+              className="nv-input text-xs"
+              disabled={loading}
+              required
             />
           </div>
 

@@ -122,7 +122,7 @@ def get_timelines(
                 "document_type": doc.document_type,
                 "date": joining,
                 "company": fields.get("company_name", fields.get("company", "Organization")),
-                "designation": fields.get("designation", fields.get("role", "Employment")),
+                "designation": fields.get("role", fields.get("designation", "Employment")),
                 "ctc": fields.get("ctc")
             })
 

@@ -82,7 +82,7 @@ class DocumentProcessor:
              * "name": Holder name string
              * "father_name": Father name string
              * "dob": Birth date string (YYYY-MM-DD format)
-           - For "Driving Licence":
+            - For "Driving Licence":
              * "dl_number": License ID string
              * "name": License holder name string
              * "dob": Birth date string (YYYY-MM-DD format)
@@ -93,6 +93,10 @@ class DocumentProcessor:
              * "total_marks": Max total marks integer (e.g. 500)
              * "marks_obtained": Total marks obtained integer (e.g. 420)
              * "roll_number": Marksheet roll number string
+             * "student_name": Registered student full name string
+             * "school_name": Registered school / institution name string
+             * "board": Education board string (e.g. CBSE, State Board)
+             * "year": Year of passing integer (e.g. 2011)
              * "subjects": Array of objects: [ {{"subject_name": "Physics", "marks_obtained": 85, "max_marks": 100}} ]
            - For "Resume":
              * "name": Person full name string
@@ -113,6 +117,7 @@ class DocumentProcessor:
              * "owner_name": Registered owner name string
              * "engine_number": Engine serial ID string
              * "chassis_number": Chassis serial ID string
+             * "expiry_date": Registration expiry / validity date string (YYYY-MM-DD format)
            - For others:
              * Standard descriptive key-value string/number pairs.
              
@@ -160,7 +165,10 @@ class DocumentProcessor:
         combined = f"{filename} {ocr_lower}"
 
         # 1. Aadhaar Card
-        has_aadhaar_pattern = bool(re.search(r"\d{4}\s?\d{4}\s?\d{4}", ocr_text))
+        has_aadhaar_pattern = (
+            bool(re.search(r"\b\d{4}\s\d{4}\s\d{4}\b", ocr_text)) or
+            (bool(re.search(r"\b\d{12}\b", ocr_text)) and any(kw in combined for kw in ["aadhaar", "aadhar", "adhar", "uidai", "unique identification"]))
+        )
         if "aadhaar" in combined or "aadhar" in combined or "adhar" in combined or "unique identification" in combined or "uidai" in combined or has_aadhaar_pattern:
             category = "Identity Documents"
             document_type = "Aadhaar Card"
@@ -169,24 +177,24 @@ class DocumentProcessor:
             # Try to extract a name or generate default
             name = DocumentProcessor._extract_regex(ocr_text, r"(?:Name|NAME)[:\s]+([A-Za-z\s]+?)(?=\s*(?:DOB|Birth|Gender|Aadhaar|Card|$))", "Praveen Kumar")
             dob = DocumentProcessor._extract_regex(ocr_text, r"(?:DOB|Birth)[:\s]+([\d/]+)", "15/08/1995")
+            dob_iso = DocumentProcessor._parse_date_to_iso(dob, "1995-08-15")
             gender = "Male" if "female" not in ocr_lower else "Female"
             aadhaar_no = DocumentProcessor._extract_regex(ocr_text, r"(\d{4}\s?\d{4}\s?\d{4})", "123456789012").replace(" ", "")
             address = "12, MG Road, Indiranagar, Bangalore, Karnataka - 560001"
             
             extracted_fields = {
-                "name": name.strip(),
-                "dob": dob,
-                "gender": gender,
                 "aadhaar_number": aadhaar_no,
-                "address": address,
-                "has_qr": True
+                "name": name.strip(),
+                "dob": dob_iso,
+                "gender": gender,
+                "address": address
             }
-            summary_card = f"Aadhaar Card of {name}. Date of Birth: {dob}. Issued by UIDAI. Verified with high confidence."
+            summary_card = f"Aadhaar Card of {name}. Date of Birth: {dob_iso}. Issued by UIDAI. Verified with high confidence."
             auto_tags = ["#identity", "#aadhaar", "#uidai", "#government"]
             entities = {
                 "PERSON": [name.strip()],
                 "ORG": ["UIDAI", "Unique Identification Authority of India"],
-                "DATE": [dob],
+                "DATE": [dob_iso],
                 "ID_NUMBER": [aadhaar_no],
                 "GPE": ["Bangalore", "Karnataka"]
             }
@@ -199,20 +207,21 @@ class DocumentProcessor:
             name = DocumentProcessor._extract_regex(ocr_text, r"(?:Name|NAME)[:\s]+([A-Za-z\s]+?)(?=\s*(?:Father|DOB|Birth|PAN|Card|$))", "Praveen Kumar")
             father = DocumentProcessor._extract_regex(ocr_text, r"(?:Father|FATHER)[:\s]+([A-Za-z\s]+?)(?=\s*(?:DOB|Birth|PAN|Card|$))", "Ramesh Kumar")
             dob = DocumentProcessor._extract_regex(ocr_text, r"(?:DOB|Birth)[:\s]+([\d/]+)", "15/08/1995")
+            dob_iso = DocumentProcessor._parse_date_to_iso(dob, "1995-08-15")
             pan_no = DocumentProcessor._extract_regex(ocr_text, r"([A-Z]{5}\d{4}[A-Z]{1})", "ABCDE1234F")
 
             extracted_fields = {
+                "pan_number": pan_no,
                 "name": name.strip(),
                 "father_name": father.strip(),
-                "dob": dob,
-                "pan_number": pan_no
+                "dob": dob_iso
             }
             summary_card = f"PAN Card belonging to {name}, listing Father's name as {father}. PAN: {pan_no}."
             auto_tags = ["#identity", "#pan", "#tax", "#government"]
             entities = {
                 "PERSON": [name.strip(), father.strip()],
                 "ORG": ["Income Tax Department"],
-                "DATE": [dob],
+                "DATE": [dob_iso],
                 "ID_NUMBER": [pan_no],
                 "GPE": ["India"]
             }
@@ -224,6 +233,7 @@ class DocumentProcessor:
             confidence_score = 0.90
             name = DocumentProcessor._extract_regex(ocr_text, r"(?:Name|NAME)[:\s]+([A-Za-z\s]+?)(?=\s*(?:DOB|Birth|DL|Licence|Expiry|$))", "Praveen Kumar")
             dob = DocumentProcessor._extract_regex(ocr_text, r"(?:DOB|Birth)[:\s]+([\d/]+)", "15/08/1995")
+            dob_iso = DocumentProcessor._parse_date_to_iso(dob, "1995-08-15")
             dl_no = DocumentProcessor._extract_regex(ocr_text, r"([A-Z]{2}\d{13})", "KA0320150089473")
             expiry = DocumentProcessor._extract_regex(ocr_text, r"(?:Expiry|EXP)[:\s]+([\d/]+)", "14/08/2035")
             
@@ -231,24 +241,22 @@ class DocumentProcessor:
             expiry_iso = DocumentProcessor._parse_date_to_iso(expiry, "2035-08-14")
 
             extracted_fields = {
-                "name": name.strip(),
-                "dob": dob,
-                "issue_date": "15/08/2015",
-                "expiry_date": expiry,
                 "dl_number": dl_no,
-                "vehicle_classes": ["LMV", "MCWG"],
-                "state_rto": "KA-03 RTO Indiranagar"
+                "name": name.strip(),
+                "dob": dob_iso,
+                "expiry_date": expiry_iso,
+                "vehicle_classes": ["LMV", "MCWG"]
             }
-            summary_card = f"Driving Licence of {name}, DL number: {dl_no}. Valid for LMV/MCWG classes. Expires on {expiry}."
+            summary_card = f"Driving Licence of {name}, DL number: {dl_no}. Valid for LMV/MCWG classes. Expires on {expiry_iso}."
             auto_tags = ["#identity", "#driving", "#dl", "#rto"]
             action_items = {
                 "expiry_date": expiry_iso,
-                "tasks": [f"Renew driving licence before {expiry}"]
+                "tasks": [f"Renew driving licence before {expiry_iso}"]
             }
             entities = {
                 "PERSON": [name.strip()],
                 "ORG": ["Karnataka RTO"],
-                "DATE": [dob, expiry],
+                "DATE": [dob_iso, expiry_iso],
                 "ID_NUMBER": [dl_no],
                 "GPE": ["KA-03", "Karnataka"]
             }
@@ -263,23 +271,23 @@ class DocumentProcessor:
             year = DocumentProcessor._extract_regex(ocr_text, r"(?:Year|YEAR)[:\s]+(\d{4})", "2011")
             
             subjects = [
-                {"subject_name": "English", "marks_obtained": 88, "max_marks": 100, "grade": "A2"},
-                {"subject_name": "Mathematics", "marks_obtained": 95, "max_marks": 100, "grade": "A1"},
-                {"subject_name": "Science", "marks_obtained": 92, "max_marks": 100, "grade": "A1"},
-                {"subject_name": "Social Science", "marks_obtained": 85, "max_marks": 100, "grade": "B1"},
-                {"subject_name": "Hindi", "marks_obtained": 80, "max_marks": 100, "grade": "B2"}
+                {"subject_name": "English", "marks_obtained": 88, "max_marks": 100},
+                {"subject_name": "Mathematics", "marks_obtained": 95, "max_marks": 100},
+                {"subject_name": "Science", "marks_obtained": 92, "max_marks": 100},
+                {"subject_name": "Social Science", "marks_obtained": 85, "max_marks": 100},
+                {"subject_name": "Hindi", "marks_obtained": 80, "max_marks": 100}
             ]
 
             extracted_fields = {
-                "student_name": name.strip(),
+                "percentage": 88.0,
+                "total_marks": 500,
+                "marks_obtained": 440,
                 "roll_number": roll_no,
+                "student_name": name.strip(),
                 "school_name": "Kendriya Vidyalaya ASC Centre",
                 "board": "CBSE Board",
                 "year": int(year),
-                "subjects": subjects,
-                "total_marks": 440,
-                "percentage": 88.0,
-                "result_status": "PASS"
+                "subjects": subjects
             }
             summary_card = f"Academic marksheet for {name} ({document_type}). Board: CBSE. Year: {year}. Score: 88.0% (PASS)."
             auto_tags = ["#academic", "#marksheet", f"#class{10 if '10' in document_type.lower() else 12}", "#cbse", f"#{year}"]
@@ -300,21 +308,21 @@ class DocumentProcessor:
             
             extracted_fields = {
                 "name": name.strip(),
-                "contact_info": {"email": "praveen.kumar@email.com", "phone": "+91-9876543210"},
-                "education_timeline": ["B.Tech in Computer Science, VTU (2012-2016)"],
-                "experience": [
-                    {"company": "Tech Solutions Inc", "role": "Senior Software Engineer", "duration": "2020-Present"},
-                    {"company": "StartUp Labs", "role": "Software Engineer", "duration": "2017-2020"}
-                ],
+                "email": "praveen.kumar@email.com",
                 "skills": ["React", "Python", "FastAPI", "PostgreSQL", "Tailwind CSS"],
+                "experience": [
+                    {"company_name": "Tech Solutions Inc", "tenure": "5 years"},
+                    {"company_name": "StartUp Labs", "tenure": "3 years"}
+                ],
+                "phone": "+91-9876543210",
                 "certifications": ["AWS Certified Solutions Architect"]
             }
             summary_card = f"Professional CV of {name}. Specialist in React, Python, and FastAPI. Includes 6+ years of engineering experience."
             auto_tags = ["#professional", "#resume", "#cv", "#software-engineer"]
             entities = {
                 "PERSON": [name.strip()],
-                "ORG": ["Tech Solutions Inc", "StartUp Labs", "VTU"],
-                "DATE": ["2012-2016", "2017-2020", "2020-Present"],
+                "ORG": ["Tech Solutions Inc", "StartUp Labs"],
+                "DATE": ["5 years", "3 years"],
                 "ID_NUMBER": [],
                 "GPE": ["Bangalore"]
             }
@@ -332,20 +340,17 @@ class DocumentProcessor:
             joining_iso = DocumentProcessor._parse_date_to_iso(joining, "2020-07-01")
 
             extracted_fields = {
-                "name": name.strip(),
-                "designation": "Senior Software Engineer",
-                "ctc": f"Rs. {ctc} per annum",
-                "joining_date": joining,
-                "department": "Engineering",
                 "company_name": company.strip(),
-                "location": "Bangalore"
+                "ctc": f"Rs. {ctc} per annum",
+                "joining_date": joining_iso,
+                "role": "Senior Software Engineer"
             }
-            summary_card = f"Job Offer Letter from {company} to {name} for the position of Senior Software Engineer at a CTC of Rs. {ctc}. Joining Date: {joining}."
+            summary_card = f"Job Offer Letter from {company} to {name} for the position of Senior Software Engineer at a CTC of Rs. {ctc}. Joining Date: {joining_iso}."
             auto_tags = ["#professional", "#offer-letter", "#employment", f"#{company.lower().replace(' ', '-')}"]
             entities = {
                 "PERSON": [name.strip()],
                 "ORG": [company.strip()],
-                "DATE": [joining],
+                "DATE": [joining_iso],
                 "ID_NUMBER": [],
                 "GPE": ["Bangalore"]
             }
@@ -369,12 +374,12 @@ class DocumentProcessor:
             extracted_fields = {
                 "patient_name": patient.strip(),
                 "doctor_name": doctor.strip(),
-                "date": date,
+                "date": date_iso,
                 "medicines": medicines,
                 "diagnosis": "Type-2 Diabetes Management",
                 "hospital_clinic": "Apollo Clinic Indiranagar"
             }
-            summary_card = f"Prescription card issued by {doctor} to {patient} on {date}. Contains 2 medicines (Metformin, Vitamin D3). Diagnosis: Diabetes Management."
+            summary_card = f"Prescription card issued by {doctor} to {patient} on {date_iso}. Contains 2 medicines (Metformin, Vitamin D3). Diagnosis: Diabetes Management."
             auto_tags = ["#medical", "#prescription", "#health", "#apollo"]
             action_items = {
                 "expiry_date": None,
@@ -383,7 +388,7 @@ class DocumentProcessor:
             entities = {
                 "PERSON": [patient.strip(), doctor.strip()],
                 "ORG": ["Apollo Clinic Indiranagar"],
-                "DATE": [date],
+                "DATE": [date_iso],
                 "ID_NUMBER": [],
                 "GPE": ["Indiranagar", "Bangalore"]
             }
@@ -406,25 +411,46 @@ class DocumentProcessor:
                 "bill_month": "June 2026",
                 "units_consumed": 180,
                 "amount_due": float(amount.replace(",", "")),
-                "due_date": due_date,
+                "due_date": due_date_iso,
                 "meter_number": "MTR-920148",
                 "connection_type": "LT-2a Domestic"
             }
-            summary_card = f"BESCOM Electricity Bill for {name}. Consumer No: {consumer_no}. Amount Due: Rs. {amount}. Due Date: {due_date}."
+            summary_card = f"BESCOM Electricity Bill for {name}. Consumer No: {consumer_no}. Amount Due: Rs. {amount}. Due Date: {due_date_iso}."
             auto_tags = ["#utility", "#bill", "#electricity", "#bescom"]
             action_items = {
                 "expiry_date": due_date_iso,
-                "tasks": [f"Pay electricity bill of Rs. {amount} by due date {due_date}"]
+                "tasks": [f"Pay electricity bill of Rs. {amount} by due date {due_date_iso}"]
             }
             entities = {
                 "PERSON": [name.strip()],
                 "ORG": ["BESCOM"],
-                "DATE": [due_date, "June 2026"],
+                "DATE": [due_date_iso, "June 2026"],
                 "ID_NUMBER": [consumer_no],
                 "GPE": ["Bangalore"]
             }
 
-        # 9. Vehicle RC
+        # 9. Bank Statement
+        elif "statement" in combined or "bank" in combined or "account" in combined:
+            category = "Financial Documents"
+            document_type = "Bank Statement"
+            confidence_score = 0.92
+            
+            extracted_fields = {
+                "account_number": "910248239014",
+                "bank_name": "HDFC Bank Ltd",
+                "balance": 45250.75
+            }
+            summary_card = "Bank Account Statement for HDFC Bank Ltd, Account Number: 910248239014. Current balance is Rs. 45,250.75."
+            auto_tags = ["#financial", "#bank", "#statement", "#hdfc"]
+            entities = {
+                "PERSON": ["Praveen Kumar"],
+                "ORG": ["HDFC Bank Ltd"],
+                "DATE": ["2026-07-08"],
+                "ID_NUMBER": ["910248239014"],
+                "GPE": ["India"]
+            }
+
+        # 10. Vehicle RC
         elif "rc" in combined or "registration certificate" in combined or "chassis" in combined or "engine" in combined:
             category = "Vehicle Documents"
             document_type = "Vehicle RC"
@@ -434,35 +460,34 @@ class DocumentProcessor:
             expiry = DocumentProcessor._extract_regex(ocr_text, r"(?:Expiry|Valid Upto)[:\s]+([\d/]+)", "12/06/2035")
             
             expiry_iso = DocumentProcessor._parse_date_to_iso(expiry, "2035-06-12")
+            reg_date_iso = DocumentProcessor._parse_date_to_iso("13/06/2020", "2020-06-13")
 
             extracted_fields = {
-                "owner_name": name.strip(),
                 "registration_number": reg_no,
-                "vehicle_class": "Motor Cycle / Scooter",
-                "make": "Honda",
-                "model": "Activa 6G",
-                "fuel_type": "Petrol",
+                "owner_name": name.strip(),
                 "engine_number": "ENG-9201482739",
                 "chassis_number": "CHS-8401827492041",
-                "registration_date": "13/06/2020",
-                "validity": expiry,
-                "insurance_validity": "12/06/2026"
+                "expiry_date": expiry_iso,
+                "registration_date": reg_date_iso,
+                "make": "Honda",
+                "model": "Activa 6G",
+                "fuel_type": "Petrol"
             }
-            summary_card = f"Vehicle Registration Certificate for Honda Activa, owned by {name}. Registration No: {reg_no}. Valid Upto: {expiry}."
+            summary_card = f"Vehicle Registration Certificate for Honda Activa, owned by {name}. Registration No: {reg_no}. Valid Upto: {expiry_iso}."
             auto_tags = ["#vehicle", "#rc", "#registration", "#honda"]
             action_items = {
                 "expiry_date": expiry_iso,
-                "tasks": [f"Renew vehicle registration certificate before {expiry}"]
+                "tasks": [f"Renew vehicle registration certificate before {expiry_iso}"]
             }
             entities = {
                 "PERSON": [name.strip()],
                 "ORG": ["Ministry of Road Transport & Highways"],
-                "DATE": ["13/06/2020", expiry],
+                "DATE": [reg_date_iso, expiry_iso],
                 "ID_NUMBER": [reg_no, "ENG-9201482739", "CHS-8401827492041"],
                 "GPE": ["KA-03", "Bangalore"]
             }
 
-        # 10. Default / Unclassified
+        # 11. Default / Unclassified
         else:
             category = "Unclassified (Review Needed)"
             document_type = "Unclassified"

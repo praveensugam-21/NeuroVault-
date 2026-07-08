@@ -1,14 +1,28 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8001';
+export const getApiUrl = () => {
+  const customUrl = localStorage.getItem('custom_api_url');
+  if (customUrl) {
+    return customUrl;
+  }
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  // Check if we are running in Capacitor mobile wrapper
+  if (window.hasOwnProperty('Capacitor') || (window as any).Capacitor) {
+    return 'https://plain-pianos-hammer.loca.lt'; // Secure public tunnel to bypass firewall
+  }
+  return 'http://localhost:8001';
+};
 
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: getApiUrl(),
 });
 
-// Request interceptor to append JWT token
+// Request interceptor to append JWT token and update baseURL dynamically
 api.interceptors.request.use(
   (config) => {
+    config.baseURL = getApiUrl();
     const token = localStorage.getItem('access_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;

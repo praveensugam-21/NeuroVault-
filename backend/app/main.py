@@ -11,24 +11,17 @@ from app.models import User, Document, DocumentTag, Entity, GraphEdge, AuditLog
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="NeuroVault AI — Core Knowledge Intelligence Engine",
-    description="Production-grade personal reasoning & document semantic memory layer.",
+    title="NeuroVault — Secure Personal Document Vault Engine",
+    description="Production-grade secure personal document archiving & indexing engine.",
     version="1.0.0"
 )
 
 # CORS middleware mapping
-# Allows React client running on localhost:5173 to interact with FastAPI.
+# Allows all origins to connect (necessary for mobile apps and web tunnels using JWT headers).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost",
-        "http://127.0.0.1",
-        "http://localhost:80",
-        "http://localhost:8001",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

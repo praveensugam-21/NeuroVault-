@@ -1,4 +1,4 @@
-# NeuroVault AI
+# NeuroVault
 
 NeuroVault is a secure, local-first document processing, categorization, and querying application. It parses uploads (PDFs, images, text), extracts structured fields, builds a semantic knowledge graph of links, tracks document health/completeness, and runs natural language queries over your files.
 

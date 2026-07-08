@@ -1,4 +1,4 @@
-# NeuroVault AI — Technical Specification
+# NeuroVault — Technical Specification
 
 This document details the system design, pipeline mechanics, Knowledge Graph architecture, and security rules of the NeuroVault platform.
 

@@ -66,7 +66,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ darkMode, setDarkMode }) => {
         {!isCollapsed && (
           <div className="flex items-center gap-2 font-semibold text-sm tracking-tight text-[#111827] dark:text-slate-100">
             <FolderLock className="w-5 h-5 text-[#2563EB]" />
-            <span>NeuroVault AI</span>
+            <span>NeuroVault</span>
           </div>
         )}
         {isCollapsed && (
