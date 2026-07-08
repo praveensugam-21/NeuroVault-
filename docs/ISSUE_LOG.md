@@ -202,4 +202,77 @@ This file is a running log of all failures, errors, installation bugs, and logic
   Avoid artificial hardcoded timers in processing workflows; poll backend status endpoints and update UI states dynamically.
 
 
+## Issue #010 — False PAN Card Classification on Unrelated Documents
+- **Date:** 2026-07-08
+- **Phase:** Document Processing / Classification
+- **File:** [document_processor.py](file:///e:/Desktop/AI%20CHATBOT/backend/app/services/document_processor.py)
+- **Error Message:**
+  ```text
+  Document type shows "PAN Card" for an uploaded file that is NOT a PAN card.
+  ```
+- **Root Cause:**
+  The PAN card classifier in `_process_with_rules()` used an overly broad regex and keyword condition:
+  ```python
+  elif "pan" in combined or bool(re.search(r"[A-Z]{5}\d{4}[A-Z]", ocr_text.upper())):
+  ```
+  Two distinct problems:
+  1. `"pan" in combined` matched words like "panel", "panache", "panda", "pan" in any unrelated sentence.
+  2. The regex `[A-Z]{5}\d{4}[A-Z]` had **no word boundaries** (`\b`). It matched any 5-letter uppercase prefix followed by 4 digits and a letter, which commonly appears in product SKUs, invoice reference numbers, order codes, and batch IDs.
+
+- **What I Tried:**
+  - Uploaded a test file unrelated to any official document → system incorrectly classified it as "PAN Card."
+
+- **Fix (Applied in `document_processor.py`):**
+  1. **Pre-computed strict signals** before the `if/elif` chain:
+     ```python
+     _pan_keywords = ["pan card", "permanent account number", "income tax department", "आयकर विभाग"]
+     _pan_keyword_found = any(kw in combined for kw in _pan_keywords)
+     _pan_number_found = bool(re.search(r"\b[A-Z]{5}\d{4}[A-Z]\b", ocr_text.upper()))
+     _is_pan = _pan_keyword_found or (_pan_number_found and "pan" in combined)
+     ```
+  2. **PAN classifier now uses `_is_pan`** — requires an explicit PAN keyword phrase (not just the word "pan") OR a strict word-boundary PAN number AND the word "pan" together.
+  3. **Strict word boundaries added** to the extraction regex: `r"\b([A-Z]{5}\d{4}[A-Z])\b"` instead of `r"([A-Z]{5}\d{4}[A-Z]{1})"`.
+  4. **Ollama confidence gate added** in `process_document()`: if Ollama returns a confidence score below 0.45, it falls back to the rule-based parser instead of returning a potentially wrong AI result.
+
+- **Learning:**
+  - Never match a document type using a single short keyword like `"pan"` in a combined text + filename string without requiring co-occurrence with another strong signal.
+  - Always add `\b` word boundaries to alphanumeric document ID regex patterns. Without them, they false-match on any text containing similar character sequences.
+  - A defense-in-depth approach using **multiple required signals** (keyword + pattern + confidence threshold) is far more robust than single-condition classifiers.
+
+---
+
+## Issue #010b — Follow-Up: Ollama LLM Still Hallucinating PAN Card for Unrelated Report
+- **Date:** 2026-07-08
+- **Phase:** Document Processing / Classification
+- **File:** [document_processor.py](file:///e:/Desktop/AI%20CHATBOT/backend/app/services/document_processor.py)
+- **Error Message:**
+  ```text
+  Document type: "PAN Card" shown for a plain text report with no PAN card content.
+  (Persisted even after rule-based fix was applied in Issue #010.)
+  ```
+- **Root Cause:**
+  The Ollama LLM runs **before** the rule-based parser. Even after fixing the rule-based classifier, Ollama itself was the one returning "PAN Card" — because its original prompt only listed document types without instructing it when **NOT** to use them. LLMs default to "best guess" when uncertain, picking the type that partially matches any word in the document.
+
+- **Fix (Three-layer defense added):**
+
+  **Layer 1 — Improved Ollama Prompt**: Added an explicit `=== CRITICAL RULE ===` section at the top of the prompt that instructs the model:
+  > "If the document does NOT clearly match one of the known types, you MUST set document_type = Unclassified. DO NOT guess."
+  Also rewrote each document_type option with explicit evidence requirements (e.g., PAN Card — only if it explicitly says Permanent Account Number or Income Tax Department).
+
+  **Layer 2 — Post-Validation (`_validate_ollama_result`)**: New method added that runs immediately after Ollama returns a result. For each major document type, it checks for the presence of **required evidence keywords/patterns** in the text. If Ollama classified a document but no supporting evidence is found, the classification is overridden to `Unclassified` regardless of what the LLM decided:
+  ```python
+  evidence_rules = {
+      "PAN Card": lambda: any(kw in combined for kw in ["pan card", "permanent account number", ...])
+                          or (_pan_number_found and "pan" in combined),
+      ...
+  }
+  if not has_evidence:
+      result["document_type"] = "Unclassified"
+  ```
+
+  **Layer 3 — Confidence Gate** (from Issue #010): Ollama results with `confidence_score < 0.45` still fall through to the rule-based parser.
+
+- **Learning:**
+  When using LLMs for classification on structured domain problems, always add a post-validation layer that uses deterministic rules to sanity-check the LLM output. LLMs are probabilistic — they will guess rather than abstain. The rule-based validator acts as a hard constraint filter over the LLM's soft classification.
+
 

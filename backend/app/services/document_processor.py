@@ -37,12 +37,88 @@ class DocumentProcessor:
         
         # Primary local inference via Ollama
         try:
-            return DocumentProcessor._process_with_ollama(ocr_text)
+            result = DocumentProcessor._process_with_ollama(ocr_text)
+            # Validate Ollama result confidence — if it returned a vague or low-confidence
+            # classification, fall through to the stricter rule-based parser instead.
+            if result.get("confidence_score", 0) < 0.45 or result.get("document_type") in (None, ""):
+                raise RuntimeError(f"Ollama returned low-confidence result ({result.get('confidence_score', 0):.2f}). Falling back.")
+            # Cross-validate classification against actual evidence in the document text.
+            # This catches LLM hallucinations where it guesses a type without real evidence.
+            result = DocumentProcessor._validate_ollama_result(result, ocr_text, filename)
+            return result
         except Exception as e:
             logger.warning(f"Ollama processing failed, falling back to rule-based parser: {str(e)}")
         
-        # Rule-based fallback simulator
+        # Rule-based fallback with strict keyword requirements
         return DocumentProcessor._process_with_rules(filename, ocr_text)
+
+    @staticmethod
+    def _validate_ollama_result(result: Dict[str, Any], ocr_text: str, filename: str) -> Dict[str, Any]:
+        """
+        Cross-validates Ollama's returned classification against actual content signals.
+        If Ollama says "PAN Card" but no PAN evidence exists in the text, override it.
+        This prevents LLM hallucination / best-guess misclassification.
+        """
+        doc_type = result.get("document_type", "Unclassified")
+        combined = f"{filename} {ocr_text.lower()}"
+        upper_text = ocr_text.upper()
+
+        # Evidence validators: (document_type, lambda that returns True if evidence IS present)
+        evidence_rules = {
+            "PAN Card": lambda: (
+                any(kw in combined for kw in ["pan card", "permanent account number", "income tax department", "\u0906\u092f\u0915\u0930"])
+                or (bool(re.search(r"\b[A-Z]{5}\d{4}[A-Z]\b", upper_text)) and "pan" in combined)
+            ),
+            "Aadhaar Card": lambda: (
+                any(kw in combined for kw in ["aadhaar", "aadhar", "adhar", "uidai", "unique identification"])
+                or bool(re.search(r"\b\d{4}\s\d{4}\s\d{4}\b", ocr_text))
+            ),
+            "Driving Licence": lambda: (
+                any(kw in combined for kw in ["driving licence", "driving license", "dl number", "rto"])
+            ),
+            "Bank Statement": lambda: (
+                any(kw in combined for kw in ["account statement", "bank statement", "ifsc", "opening balance", "closing balance"])
+            ),
+            "Electricity Bill": lambda: (
+                any(kw in combined for kw in ["electricity", "bescom", "tneb", "consumer number", "units consumed", "kwh"])
+            ),
+            "Vehicle RC": lambda: (
+                any(kw in combined for kw in ["registration certificate", "vehicle rc", "chassis number", "engine number"])
+                or bool(re.search(r"\b[A-Z]{2}\d{2}[A-Z]{1,2}\d{4}\b", upper_text))
+            ),
+            "Prescription": lambda: (
+                any(kw in combined for kw in ["prescription", "medicine", "tablet", "dosage", "rx", "dr.", "physician"])
+            ),
+            "Resume": lambda: (
+                any(kw in combined for kw in ["resume", "curriculum vitae", "work experience", "skills", "objective"])
+            ),
+            "Offer Letter": lambda: (
+                any(kw in combined for kw in ["offer letter", "appointment letter", "ctc", "joining date", "designation"])
+            ),
+            "Class 10 Marksheet": lambda: (
+                any(kw in combined for kw in ["marksheet", "cbse", "board of secondary", "roll number", "sslc"])
+            ),
+            "Class 12 Marksheet": lambda: (
+                any(kw in combined for kw in ["marksheet", "cbse", "board of secondary", "roll number", "higher secondary"])
+            ),
+        }
+
+        if doc_type in evidence_rules:
+            has_evidence = evidence_rules[doc_type]()
+            if not has_evidence:
+                logger.warning(
+                    f"Ollama classified as '{doc_type}' but no supporting evidence found in document. "
+                    f"Overriding to Unclassified."
+                )
+                result["document_type"] = "Unclassified"
+                result["category"] = "Personal Notes"
+                result["confidence_score"] = 0.30
+                result["extracted_fields"] = {"ocr_snippet": ocr_text[:300]}
+                result["summary_card"] = "Document content does not match the detected type. Archived for manual review."
+                result["auto_tags"] = ["#unclassified", "#review-required"]
+                result["anomalies"] = [f"AI misclassification corrected: original type was '{doc_type}' but no evidence found."]
+
+        return result
 
     @staticmethod
     def _process_with_ollama(ocr_text: str) -> Dict[str, Any]:
@@ -50,11 +126,21 @@ class DocumentProcessor:
         
         prompt = f"""
         You are the NeuroVault local document metadata extraction engine.
-        Analyze this document OCR text and categorize, summarize, and extract fields into a JSON object matching this schema strictly.
-        
+        Analyze this document OCR text and categorize, summarize, and extract fields into a JSON object.
+
+        === CRITICAL RULE ===
+        If the document does NOT clearly match one of the known types listed below (e.g. it is a
+        general report, letter, notes, printout, screenshot, random text, or any other unrecognized
+        content), you MUST set:
+          - "document_type": "Unclassified"
+          - "category": "Personal Notes"
+          - "confidence_score": a value below 0.45
+        DO NOT guess or pick the closest-sounding type. Use "Unclassified" whenever you are unsure.
+        ====================
+
         Output a valid JSON object ONLY. Do not wrap in markdown ```json or backticks.
         The JSON must strictly match this structural schema:
-        
+
         1. "category": Main folder category string. Choose EXACTLY one of:
            - "Identity Documents"
            - "Academic Records"
@@ -63,10 +149,24 @@ class DocumentProcessor:
            - "Medical Records"
            - "Property & Legal"
            - "Vehicle Documents"
-           - "Personal Notes"
+           - "Personal Notes"  ← USE THIS for anything that does not clearly match above
            
         2. "document_type": Sub-type string. Choose EXACTLY one of:
-           - "Aadhaar Card", "PAN Card", "Driving Licence", "Class 10 Marksheet", "Class 12 Marksheet", "Degree Certificate", "Resume", "Offer Letter", "Pay Slip", "Bank Statement", "Prescription", "Electricity Bill", "Vehicle RC", "Insurance Policy", "Unclassified"
+           - "Aadhaar Card" — only if it contains Aadhaar number, UIDAI branding, or biometric ID
+           - "PAN Card" — only if it explicitly says PAN Card, Permanent Account Number, or Income Tax Department with a PAN number
+           - "Driving Licence" — only if issued by RTO with DL number and vehicle classes
+           - "Class 10 Marksheet" — only if it is a school board marksheet for Class 10
+           - "Class 12 Marksheet" — only if it is a school board marksheet for Class 12
+           - "Degree Certificate" — only if issued by a university for a degree
+           - "Resume" — only if it is a personal CV / resume with skills and experience
+           - "Offer Letter" — only if it is a formal employment offer with CTC and joining date
+           - "Pay Slip" — only if it is a monthly payslip / salary statement
+           - "Bank Statement" — only if it shows bank account transactions with balance
+           - "Prescription" — only if issued by a doctor with medicine names and dosages
+           - "Electricity Bill" — only if it is a utility bill showing units consumed and amount due
+           - "Vehicle RC" — only if it is a vehicle registration certificate with chassis and engine numbers
+           - "Insurance Policy" — only if it is a formal insurance policy document
+           - "Unclassified" ← USE THIS for reports, letters, notes, articles, forms, or ANYTHING ELSE
            
         3. "confidence_score": Float between 0.0 and 1.0.
         
@@ -142,7 +242,8 @@ class DocumentProcessor:
             response_text = re.sub(r"^```(?:json)?\n", "", response_text)
             response_text = re.sub(r"\n```$", "", response_text)
             
-        return json.loads(response_text)
+        result = json.loads(response_text)
+        return result
 
     @staticmethod
     def _process_with_rules(filename: str, ocr_text: str) -> Dict[str, Any]:
@@ -164,11 +265,21 @@ class DocumentProcessor:
         ocr_lower = ocr_text.lower()
         combined = f"{filename} {ocr_lower}"
 
-        # 1. Aadhaar Card
+        # --- Pre-compute strict classifier signals BEFORE the if/elif chain ---
+        # Aadhaar
         has_aadhaar_pattern = (
             bool(re.search(r"\b\d{4}\s\d{4}\s\d{4}\b", ocr_text)) or
             (bool(re.search(r"\b\d{12}\b", ocr_text)) and any(kw in combined for kw in ["aadhaar", "aadhar", "adhar", "uidai", "unique identification"]))
         )
+        # PAN: requires strict keyword + word-boundary pattern to prevent false positives on
+        # product codes, invoice IDs, or random alphanumeric strings.
+        _pan_keywords = ["pan card", "permanent account number", "income tax department", "\u0906\u092f\u0915\u0930 \u0935\u093f\u092d\u093e\u0917"]
+        _pan_keyword_found = any(kw in combined for kw in _pan_keywords)
+        _pan_number_found = bool(re.search(r"\b[A-Z]{5}\d{4}[A-Z]\b", ocr_text.upper()))
+        # Only classify as PAN if we see a keyword OR (PAN number pattern AND the word 'pan')
+        _is_pan = _pan_keyword_found or (_pan_number_found and "pan" in combined)
+
+        # 1. Aadhaar Card
         if "aadhaar" in combined or "aadhar" in combined or "adhar" in combined or "unique identification" in combined or "uidai" in combined or has_aadhaar_pattern:
             category = "Identity Documents"
             document_type = "Aadhaar Card"
@@ -199,16 +310,17 @@ class DocumentProcessor:
                 "GPE": ["Bangalore", "Karnataka"]
             }
 
-        # 2. PAN Card
-        elif "pan" in combined or "permanent account" in combined or "income tax" in combined or bool(re.search(r"[A-Z]{5}\d{4}[A-Z]", ocr_text.upper())):
+        # 2. PAN Card — uses pre-computed _is_pan signal (strict: keyword + boundary-anchored pattern)
+        elif _is_pan:
             category = "Identity Documents"
             document_type = "PAN Card"
-            confidence_score = 0.95
+            # Lower confidence if we matched via regex only (no strong keyword)
+            confidence_score = 0.92 if _pan_keyword_found else 0.70
             name = DocumentProcessor._extract_regex(ocr_text, r"(?:Name|NAME)[:\s]+([A-Za-z\s]+?)(?=\s*(?:Father|DOB|Birth|PAN|Card|$))", "Praveen Kumar")
             father = DocumentProcessor._extract_regex(ocr_text, r"(?:Father|FATHER)[:\s]+([A-Za-z\s]+?)(?=\s*(?:DOB|Birth|PAN|Card|$))", "Ramesh Kumar")
             dob = DocumentProcessor._extract_regex(ocr_text, r"(?:DOB|Birth)[:\s]+([\d/]+)", "15/08/1995")
             dob_iso = DocumentProcessor._parse_date_to_iso(dob, "1995-08-15")
-            pan_no = DocumentProcessor._extract_regex(ocr_text, r"([A-Z]{5}\d{4}[A-Z]{1})", "ABCDE1234F")
+            pan_no = DocumentProcessor._extract_regex(ocr_text, r"\b([A-Z]{5}\d{4}[A-Z])\b", "ABCDE1234F")
 
             extracted_fields = {
                 "pan_number": pan_no,

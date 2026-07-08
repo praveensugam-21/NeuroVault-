@@ -40,6 +40,7 @@ services:
       UPLOADS_DIR: /data/uploads
       MODEL_CACHE_DIR: /data/model-cache
     volumes:
+      - ./backend/app:/app/app
       - uploads:/data/uploads
       - chromadb-data:/data/chromadb
       - model-cache:/data/model-cache
