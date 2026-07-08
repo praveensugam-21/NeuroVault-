@@ -1,151 +1,155 @@
-# NeuroVault AI — Architecture & Core Design System
+# NeuroVault — System Architecture
 
-Welcome to the **NeuroVault AI** Architecture document. This guide explains how the React frontend, FastAPI backend, SQLite database, and ChromaDB vector store cooperate to build a unified semantic memory layer.
+This document explains the full system architecture of a self-hosted NeuroVault deployment.
 
 ---
 
-## 1. High-Level Architecture Overview
+## 1. The Self-Hosted Model
 
-NeuroVault AI is designed as a modular, local-first intelligence application that can be easily containerized or scaled to the cloud.
+NeuroVault is not a SaaS platform. Every user runs their own complete, independent instance. The diagram below shows one such deployment:
 
 ```
-       ┌─────────────────────────────────────────────────────────┐
-       │                  USER WEB BROWSER                       │
-       │                                                         │
-       │  ┌─────────────────────────┐   ┌─────────────────────┐  │
-       │  │ Dashboard & Timeline    │   │ Chat Assistant (RAG)│  │
-       │  └────────────┬────────────┘   └──────────┬──────────┘  │
-       │               │                           │             │
-       │  ┌────────────▼────────────┐   ┌──────────▼──────────┐  │
-       │  │ Smart Folder Vault      │   │ React Flow Graph    │  │
-       │  └────────────┬────────────┘   └──────────┬──────────┘  │
-       └───────────────┼───────────────────────────┼─────────────┘
-                       │ HTTP / REST               │
-                       ▼                           ▼
- ┌───────────────────────────────────────────────────────────────────┐
- │                       FASTAPI BACKEND                             │
- │                                                                   │
- │  ┌─────────────────────────────────────────────────────────────┐  │
- │  │                  APIs & Routers                            │  │
- │  │  /documents  |  /chat (RAG)  |  /graph  |  /dashboard      │  │
- │  └──────────────┬─────────────────────────────────────────────┘  │
- │                 │                                                 │
- │                 ▼                                                 │
- │  ┌─────────────────────────────────────────────────────────────┐  │
- │  │        15-Step Async Processing Pipeline (Manager)         │  │
- │  └──────────────┬───────────────────────────────┬─────────────┘  │
- │                 │                               │                 │
- │                 ▼ (Relational)                  ▼ (Embeddings)    │
- │        ┌─────────────────┐             ┌─────────────────┐        │
- │        │  SQLite DB      │             │  ChromaDB       │        │
- │        │  (Metadata,     │             │  (Vector Store) │        │
- │        │   Graph Edges)  │             └─────────────────┘        │
- │        └────────┬────────┘                                        │
- │                 │                                                 │
- └─────────────────┼─────────────────────────────────────────────────┘
-                   │ Secure API Calls
-                   ▼
-         ┌──────────────────────────────────────┐
-         │          EXTERNAL AI LAYER           │
-         │   Whisper AI / Local Ollama /        │
-         │  spaCy NER / Sentence Transformers   │
-         └──────────────────────────────────────┘
+┌──────────────────────────── Your Computer / Server ────────────────────────────┐
+│                                                                                │
+│   ┌──────────────────────────────────────────────────────────────────────┐    │
+│   │                    Docker Compose Network                            │    │
+│   │                                                                      │    │
+│   │   Browser ──► Nginx (Port 80/443)                                   │    │
+│   │                    │                                                 │    │
+│   │         ┌──────────┴──────────┐                                     │    │
+│   │         │                     │                                     │    │
+│   │    Frontend (React)      Backend API (FastAPI)                      │    │
+│   │                               │                                     │    │
+│   │            ┌──────────────────┼──────────────────┐                  │    │
+│   │            │                  │                  │                  │    │
+│   │      PostgreSQL           ChromaDB           Uploads/               │    │
+│   │    (Docker Volume)     (Docker Volume)    (Docker Volume)          │    │
+│   │                                                                      │    │
+│   └──────────────────────────────────────────────────────────────────────┘    │
+│                                                                                │
+│                    Everything stays on YOUR disk                               │
+└────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 2. Relational Database Schema (SQLite)
+## 2. Service Responsibilities
 
-We use SQLAlchemy ORM with a local SQLite database file `neurovault.db`. It consists of five primary tables:
-
-### A. `users`
-Tracks user accounts, passwords (bcrypt hashes), and secondary document locks.
-- `id`: Integer (Primary Key)
-- `email`: String (Unique, Indexed)
-- `hashed_password`: String
-- `pin_hash`: String (Optional, for secondary document PIN protection)
-- `created_at`: DateTime
-
-### B. `documents`
-Stores document metadata, processing status, and raw extracted structured data.
-- `id`: String (UUID, Primary Key)
-- `user_id`: Integer (Foreign Key -> `users.id`)
-- `name`: String
-- `file_path`: String (Path to file on disk)
-- `file_type`: String (PDF, Image, Audio, Text, URL)
-- `category`: String (e.g., Identity, Academic, Professional, etc.)
-- `document_type`: String (e.g., Aadhaar Card, PAN Card, Class 10 Marksheet)
-- `confidence_score`: Float
-- `status`: String (PROCESSING, COMPLETE, FAILED)
-- `extracted_json`: Text/JSON (Full schema fields stored as a structured JSON object)
-- `summary`: Text (3-5 line natural language summary card)
-- `is_locked`: Boolean (Defaults to False)
-- `created_at`: DateTime
-- `updated_at`: DateTime
-
-### C. `document_tags`
-Represents tags associated with documents for fast categorization.
-- `id`: Integer (Primary Key)
-- `document_id`: String (Foreign Key -> `documents.id`)
-- `tag_name`: String (e.g., `#identity`, `#academic`)
-
-### D. `entities`
-Stores specific entities (people, organizations, dates, document numbers) extracted via spaCy.
-- `id`: Integer (Primary Key)
-- `document_id`: String (Foreign Key -> `documents.id`)
-- `entity_type`: String (PERSON, ORG, DATE, ID_NUMBER)
-- `entity_value`: String (e.g., "Ravi Kumar", "CBSE Board", "2026-06-11")
-
-### E. `graph_edges`
-Represents named entity links and relationship semantic overlaps in the Knowledge Graph.
-- `id`: Integer (Primary Key)
-- `source_id`: String (Foreign Key -> `documents.id` or `entities.id`)
-- `target_id`: String (Foreign Key -> `documents.id` or `entities.id`)
-- `relationship_type`: String (e.g., `ISSUED_TO`, `STUDIED_AT`, `EMPLOYED_AT`, `RELATED_TO`, `PRECEDES`, `FOLLOWS`, `CONTRADICTS`)
-- `created_at`: DateTime
-
-### F. `audit_logs`
-Tracks document accesses for strict compliance and privacy audits.
-- `id`: Integer (Primary Key)
-- `user_id`: Integer (Foreign Key -> `users.id`)
-- `document_id`: String (Foreign Key -> `documents.id`)
-- `action`: String (e.g., "VIEW", "DOWNLOAD", "DELETE", "LOCK")
-- `ip_address`: String (Anonymized)
-- `user_agent`: String
-- `timestamp`: DateTime
+| Service | Technology | Purpose |
+|---|---|---|
+| **Nginx** | nginx:alpine | Reverse proxy, rate limiting, HTTPS termination |
+| **Frontend** | React + Vite + TypeScript | User interface, Knowledge Graph visualisation |
+| **Backend** | FastAPI + Python | API, document pipeline orchestration, JWT auth |
+| **PostgreSQL** | postgres:15-alpine | Relational data: users, documents, entities, logs |
+| **ChromaDB** | chromadb | Vector embeddings for semantic document search |
+| **Uploads** | Docker Volume | Raw uploaded files (PDFs, images, audio) |
+| **Model Cache** | Docker Volume | SentenceTransformer + EasyOCR model weights |
 
 ---
 
-## 3. Vector Database Structure (ChromaDB)
+## 3. Document Processing Pipeline
 
-We run **ChromaDB** in a local persistent directory `vector_store/`.
-We maintain a single collection: `neurovault_documents`.
+When a file is uploaded, it travels through a multi-stage background pipeline:
 
-### Document Chunking Strategy
-- For structured documents (e.g. Aadhaar, PAN), we embed the natural language **Summary Card** + the flat stringified **Extracted JSON fields** as a single document chunk.
-- For free-text documents (e.g. Resumes, notes), we chunk the text by paragraphs (max 1000 characters) with a 200-character overlap.
-
-### Metadata Schema
-Every chunk stored in ChromaDB contains metadata fields to enable metadata filtering:
-- `document_id`: String (matches SQLite `documents.id`)
-- `user_id`: Integer
-- `category`: String
-- `document_type`: String
-- `created_at`: String
+```
+Upload
+  │
+  ▼
+Save to disk (uploads/ volume)
+  │
+  ▼
+Create DB record (status = PROCESSING)
+  │
+  ▼
+Text Extraction
+  ├── Digital PDF ──► pypdf (direct text layer)
+  └── Scanned PDF / Image ──► EasyOCR (neural OCR)
+  │
+  ▼
+Classification & Metadata Extraction
+  ├── Primary: Local Ollama Model (contextual JSON)
+  └── Fallback: Rule-based regex parser (offline)
+  │
+  ▼
+AES-256 Encrypt extracted_json
+  │
+  ▼
+Summary Card Generation
+  │
+  ▼
+Named Entity Recognition (spaCy)
+  │
+  ▼
+Knowledge Graph Linking (GraphEdge table)
+  │
+  ▼
+Vector Embedding (SentenceTransformer all-MiniLM-L6-v2)
+  │
+  ▼
+Store in ChromaDB
+  │
+  ▼
+DB record updated (status = COMPLETE)
+```
 
 ---
 
-## 4. Pipeline Data Flow
+## 4. Authentication Flow
 
-When a file is uploaded, it transitions through:
-1. **API Router**: Receives file, generates a UUID, saves to `uploads/` directory, creates database record with status `PROCESSING`.
-2. **Pipeline Manager**: Launches an asynchronous worker thread/asyncio task to process the file step-by-step.
-3. **Pre-processing Engine**: If it is an image, it uses OpenCV to denoise, deskew, and enhance contrast.
-4. **Vision/OCR Engine**: Local EasyOCR reads the document images (or pypdf extracts digital PDF layers).
-5. **Taxonomy Classifier**: Decides if it is an Aadhaar, Class 10 mark sheet, etc.
-6. **Field Extractor**: Calls local Ollama to extract type-specific JSON fields.
-7. **Validation & Quality Engine**: Assesses formatting rules and computes confidence.
-8. **Entity Extractor & Embedder**: Extracts named entities via spaCy and computes vector embeddings using `all-MiniLM-L6-v2`.
-9. **Knowledge Graph Linker**: Queries database for other records matching extracted entities, and creates matching relationship edges.
-10. **Database & Vector Commit**: Updates SQLite status to `COMPLETE`, stores extracted JSON, adds vector embeddings to ChromaDB, and updates graph links.
-11. **User Notification**: Frontend polling or WebSockets notifies the user that the document is ready.
+```
+Client                 Nginx                Backend               PostgreSQL
+  │                      │                     │                       │
+  │── POST /api/auth/login ─────────────────► │                       │
+  │                                            │── Query user ────────►│
+  │                                            │◄─ User record ────────│
+  │                                            │
+  │                                            │ [Argon2id verify password]
+  │                                            │ [Generate access_token (15 min)]
+  │                                            │ [Generate refresh_token (30 days)]
+  │                                            │ [Store hashed refresh_token in DB]
+  │                                            │
+  │◄─ {access_token, refresh_token} ──────────│
+  │
+  │ ... (15 minutes later)
+  │
+  │── POST /api/auth/refresh ───────────────► │
+  │   body: {refresh_token}                    │── Verify hash ────────►│
+  │                                            │◄─ Match ──────────────│
+  │                                            │ [Rotate: new pair]
+  │◄─ {new_access_token, new_refresh_token} ──│
+```
+
+---
+
+## 5. Data Isolation Between Users
+
+Even on a single NeuroVault instance shared between family members or colleagues, all data is strictly isolated:
+
+- Every database query is filtered by `user_id`.
+- ChromaDB vector searches use `where={"user_id": user_id}` metadata filters.
+- Uploaded files are stored in a flat `uploads/` directory with UUID filenames — no user-identifiable paths.
+- The API never returns another user's documents, entities, or audit logs.
+
+---
+
+## 6. Core Components
+
+### React Frontend
+- Built with TypeScript, React Router, and Zustand for state management.
+- Knowledge Graph rendered using React Flow with a custom clustered layout algorithm.
+- Tailwind CSS for styling.
+
+### FastAPI Backend
+- Async Python API with SQLAlchemy ORM + Alembic migrations.
+- Background document pipeline managed by `DocumentPipelineManager`.
+- Encryption/decryption layer via `EncryptionService` (AES-256 Fernet).
+
+### PostgreSQL
+- Full relational schema: `users`, `documents`, `document_tags`, `entities`, `graph_edges`, `audit_logs`.
+- Connection pooling via SQLAlchemy `QueuePool`.
+- Index-optimised queries on `user_id`, `status`, and `category`.
+
+### ChromaDB
+- Persistent local vector store at `/data/chromadb`.
+- Stores 384-dimensional `all-MiniLM-L6-v2` embeddings.
+- User-scoped metadata filtering ensures vector search cannot leak data across users.

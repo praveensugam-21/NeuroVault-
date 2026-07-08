@@ -1,96 +1,149 @@
 # NeuroVault
 
-NeuroVault is a secure, local-first document processing, categorization, and querying application. It parses uploads (PDFs, images, text), extracts structured fields, builds a semantic knowledge graph of links, tracks document health/completeness, and runs natural language queries over your files.
+**A secure, self-hosted personal document vault. Your data stays on your machine — always.**
+
+NeuroVault is an open-source document intelligence platform you deploy on your own hardware. Upload, classify, search, and query your documents using local OCR, named entity recognition, vector search, and a local Ollama-powered Memory Assistant — all without sending any file or query to external servers.
+
+> The developer distributes the software. You own everything else.
 
 ---
 
-## Key Features
+## What Makes NeuroVault Different?
 
-1. **Document Processing Pipeline**
-   - Automatically classifies files into key business categories (Identity, Academic, Financial, Professional, etc.).
-   - Runs layout OCR (using EasyOCR for scanned pages) and text-layer parsing (using `pypdf` for digital documents).
-   - Generates concise summary cards and extracts structured metadata (e.g. Aadhaar, PAN numbers, birth dates, names).
-
-2. **Semantic Knowledge Graph**
-   - Automatically extracts entity relationships (names, organizations, dates) using spaCy NER.
-   - Links documents based on mutual connections (e.g., studies at, issued by, follows).
-   - Renders a clean, structured clustered layout using React Flow in the browser.
-
-3. **Secure Local-First Architecture**
-   - Field-level encryption for sensitive identifiers.
-   - Front-end data masking (e.g., masking Aadhaar and PAN numbers by default).
-   - Individual document locks secured by a bcrypt-hashed PIN.
-   - Full audit trail logging actions like uploads, queries, lock/unlock, and deletes.
-
-4. **NL Query Engine & Assistant**
-   - Combines ChromaDB vector search with Sentence Transformers (`all-MiniLM-L6-v2`) and Gemini.
-   - Answers questions regarding vault content (e.g., extracting marks, license expiry, or bio-data fields).
-   - Features a clean, three-panel workspace layout with cited document slide-out drawers.
+| Feature | Traditional Cloud Apps | NeuroVault |
+|---|---|---|
+| Document storage | Provider's cloud | Your machine only |
+| Who can see your data | Provider + their staff | Only you |
+| Database | Shared cloud DB | Your private PostgreSQL |
+| AI queries | Sent to cloud | Local Ollama LLM |
+| Internet required | Always | None (100% offline) |
+| Monthly fee | Usually yes | Free (open source) |
 
 ---
 
-## Performance Optimizations (Ingestion & Boot)
+## What It Does
 
-To ensure low latency and a smooth user experience, the system implements several production-level optimizations:
-- **Pre-downloaded ML Models**: Neural network weights for `SentenceTransformer`, `EasyOCR`, and `spaCy` are baked directly into the Docker image layers on build. No model downloads occur during runtime, keeping document processing offline and fast.
-- **Persistent Model Cache**: Caches are mounted to the host filesystem via Docker volumes (`./backend/cache`). If the container is rebuilt or reset, the weights load instantly from the host disk.
-- **Client-Side Polling**: The React client polls the FastAPI status endpoint every 800ms during upload, fast-forwarding the pipeline tracker as soon as processing completes on the server.
-
----
-
-## Quick Start
-
-### Run with Docker Compose (Recommended)
-
-1. Launch Docker Desktop.
-2. In the project root directory, run:
-   ```bash
-   docker compose up --build -d
-   ```
-3. Access the applications:
-   - **React UI**: [http://localhost](http://localhost) (Port 80)
-   - **FastAPI Documentation**: [http://localhost:8001/docs](http://localhost:8001/docs)
+- **Smart Classification** — Automatically categorises documents into Identity, Academic, Financial, Professional, Medical, Vehicle, and more.
+- **OCR & PDF Parsing** — Extracts text from scanned images (EasyOCR) and digital PDFs (pypdf) without any cloud service.
+- **Metadata Extraction** — Pulls structured fields like Aadhaar numbers, PAN numbers, DOBs, expiry dates, and bank account numbers. Sensitive fields are encrypted at rest using AES-256.
+- **Knowledge Graph** — Links documents through shared entities (names, organisations, dates). Visualise connections between your Aadhaar, PAN, and bank statements.
+- **Semantic Search** — Powered by SentenceTransformer embeddings (ChromaDB). Find the document by meaning, not just keywords.
+- **Memory Assistant** — Ask natural language questions about your vault ("When does my driving licence expire?") and get cited answers via your local Ollama model.
+- **Document Lock** — Lock sensitive files behind a secondary PIN. Locked files are excluded from all search results and AI queries.
+- **Audit Logs** — Every action (upload, view, lock, unlock, delete, query) is logged in your private database.
 
 ---
 
-### Local Development Setup
+## Quick Start (5 Steps)
 
-If you prefer to run the backend and frontend services directly on your host machine:
+### Requirements
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac) or Docker Engine (Linux)
+- [Ollama](https://ollama.com) running locally on your host or as a Docker container
 
-#### 1. Backend Service
-1. Navigate to the backend folder:
-   ```bash
-   cd backend
-   ```
-2. Install Python requirements:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Start the Uvicorn server:
-   ```bash
-   python -m uvicorn app.main:app --port 8001
-   ```
-   The backend API will run on `http://localhost:8001`.
+### Installation
 
-#### 2. Frontend Client
-1. Navigate to the frontend folder:
-   ```bash
-   cd frontend
-   ```
-2. Install node dependencies:
-   ```bash
-   npm install
-   ```
-3. Start the Vite development server:
-   ```bash
-   npm run dev
-   ```
-   The frontend will run on `http://localhost:5173`.
+```bash
+# 1. Clone the repository
+git clone https://github.com/praveensugam-21/NeuroVault-.git
+cd NeuroVault-
+
+# 2. Create your environment file
+cp .env.example .env
+
+# 3. Edit .env and fill in your values (see notes below)
+#    Required: POSTGRES_PASSWORD, JWT_SECRET_KEY, ENCRYPTION_KEY
+
+# 4. Start all services
+docker compose up -d
+
+# 5. Open your browser
+# → http://localhost
+```
+
+On first boot, create your account. You are the owner and administrator of your own deployment.
 
 ---
 
-## Test Credentials
+## Generating Required Keys
 
-For testing and verification:
-- **Login Account**: `test@neurovault.ai` / `Password123`
-- **Secondary PIN**: `1234` (for locking and unlocking documents)
+Open a terminal and run these commands to generate secure keys:
+
+```bash
+# JWT Secret Key
+openssl rand -hex 32
+
+# AES-256 Encryption Key (for sensitive fields)
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Paste the output values into your `.env` file.
+
+---
+
+## Supported Platforms
+
+NeuroVault requires no code changes to deploy on any of the following:
+
+| Platform | Notes |
+|---|---|
+| Windows Laptop | Docker Desktop required |
+| Mac | Docker Desktop required |
+| Linux Desktop/Server | Docker Engine |
+| Raspberry Pi 4+ | Use ARM-compatible images |
+| Synology NAS | Enable Container Manager |
+| Linux VPS (DigitalOcean, Linode) | Recommended for shared/family use |
+| AWS EC2 | t3.medium or larger |
+| Azure VM | Standard_B2s or larger |
+| Google Cloud VM | e2-medium or larger |
+
+---
+
+## Architecture
+
+```
+Your Device / Server
+┌────────────────────────────────────────────────────────────┐
+│                                                            │
+│   Browser  ──►  Nginx (Port 80/443)                       │
+│                    │                                       │
+│                    ├──► Frontend (React + Vite)            │
+│                    │                                       │
+│                    └──► Backend API (FastAPI)              │
+│                              │                             │
+│                    ┌─────────┼─────────┐                   │
+│                    ▼         ▼         ▼                   │
+│               PostgreSQL  ChromaDB  Uploads/               │
+│               (Relational) (Vectors) (Files)               │
+│                                                            │
+│   All data is stored in Docker named volumes on YOUR disk  │
+└────────────────────────────────────────────────────────────┘
+```
+
+All data stays completely isolated on your infrastructure, running fully locally and offline.
+
+
+---
+
+## Documentation
+
+| File | Description |
+|---|---|
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Full deployment guide (HTTPS, VPS, backup, update) |
+| [database.md](database.md) | PostgreSQL schema, Alembic migrations, pgAdmin |
+| [security.md](security.md) | Encryption, authentication, privacy architecture |
+| [docs/01_ARCHITECTURE.md](docs/01_ARCHITECTURE.md) | System architecture deep dive |
+| [docs/10_SECURITY_AND_PRIVACY.md](docs/10_SECURITY_AND_PRIVACY.md) | Security & privacy policy |
+
+---
+
+## Test Credentials (Development Only)
+
+For local testing after first boot:
+- Register any email and password you choose — you are the admin.
+- Secondary PIN: Set via **Settings → Security PIN** after login.
+
+---
+
+## License
+
+NeuroVault is open-source software. You are free to use, modify, and self-host it.

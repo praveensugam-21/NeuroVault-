@@ -1,46 +1,102 @@
-# NeuroVault AI — Security, Privacy & Compliance Standards
+# NeuroVault — Security & Privacy Policy
 
-This document outlines the security architecture and privacy compliance standards implemented in NeuroVault AI.
-
----
-
-## 1. Sensitive Data Masking Formats
-
-To protect personally identifiable information (PII), sensitive identifiers are masked in all frontend views and only exposed in full after secondary PIN verification:
-
-- **Aadhaar Numbers:** Masked to show only the last 4 digits.
-  - Raw format: `123456789012`
-  - Masked format: `XXXX-XXXX-9012`
-- **PAN Numbers:** Masked to show only the first 5 and last 1 characters.
-  - Raw format: `ABCDE1234F`
-  - Masked format: `ABCDE****F`
-- **Bank Account Numbers:** Masked to show only the last 4 digits.
-  - Raw format: `30148291048`
-  - Masked format: `XXXXXXX1048`
+This document is the formal security and privacy policy for the NeuroVault self-hosted platform. It explains what data is collected, where it is stored, who can access it, and how it is protected.
 
 ---
 
-## 2. Authentication & Session Control (JWT)
+## Privacy Statement
 
-We secure API endpoints using standard JSON Web Tokens (JWT):
-1. **Login:** Users post credentials to `/api/auth/login`.
-2. **Hashing:** Password matching is verified using `bcrypt` (via `passlib.context`).
-3. **Token:** The server signs a JWT containing the user's email sub, valid for 24 hours (1440 minutes).
-4. **Header:** The client stores the token in localStorage and attaches it to all subsequent requests inside the `Authorization: Bearer <token>` header.
+**NeuroVault is 100% self-hosted. The developer and publisher of this software has no access to your data — ever.**
 
----
+The developer:
+- Does not receive your documents.
+- Does not receive your extracted text or metadata.
+- Does not receive your database contents.
+- Does not receive your vector embeddings.
+- Does not receive your chat history or AI query logs.
+- Does not collect telemetry, crash reports, or usage statistics.
 
-## 3. Secondary PIN Locks
-
-Highly sensitive documents (like tax papers or medical records) can be individually "Locked" with a secondary security PIN:
-- The PIN is stored in the database as a strong bcrypt hash (`users.pin_hash`).
-- When a document's `is_locked` flag is true, the backend router `/api/documents/{id}` checks if a valid PIN matches.
-- If no PIN (or an invalid PIN) is provided, the API hides the `extracted_json` fields and prints a locked placeholder summary, preventing leaks if the user leaves their session open.
+Your NeuroVault instance is exclusively under your control. You are the only person with access to your data.
 
 ---
 
-## 4. SQL Access Auditing
+## Data Storage
 
-Every action taken on documents is recorded in the `audit_logs` table for compliance:
-- **Recorded Fields:** User ID, Document ID, Action (VIEW, LOCK, UNLOCK, DELETE, UPLOAD), and Timestamp.
-- Users can review their active security trail in the Settings dashboard.
+| Data Type | Storage Location | Encrypted |
+|---|---|---|
+| Uploaded files (PDFs, images) | Docker volume `uploads` on your server | File system level (OS encryption optional) |
+| Extracted metadata (JSON) | PostgreSQL `documents.extracted_json` | **Yes — AES-256 Fernet** |
+| User passwords | PostgreSQL `users.hashed_password` | **Yes — Argon2id hash** |
+| Session tokens | Browser memory (not localStorage) | **Yes — Argon2id hash in DB** |
+| Vector embeddings | ChromaDB volume on your server | No (embeddings are not personally identifiable) |
+| Audit logs | PostgreSQL `audit_logs` table | No (timestamps and action types only) |
+| AI chat history | Not persisted to database by default | N/A |
+
+## Data Transmitted Externally
+
+**No data is transmitted externally. NeuroVault operates 100% offline.**
+
+- All processing, OCR, classification, and metadata extraction are completed locally on your server.
+- The Memory Assistant queries run against your local Ollama server.
+- No network connections are initiated to Google's Gemini, OpenAI, or other cloud AI providers.
+
+---
+
+## Authentication Security
+
+See [security.md](../security.md) for full technical details. Summary:
+
+| Mechanism | Standard Used |
+|---|---|
+| Password hashing | Argon2id (time: 3, mem: 64MB, par: 4) |
+| Session management | JWT access token (15 min) + refresh token (30 days) |
+| Refresh token storage | Argon2id hash only — raw token never stored |
+| Token rotation | Yes — refresh invalidated after each use |
+| Logout | Refresh token hash wiped from database |
+
+---
+
+## Field-Level Encryption
+
+Sensitive PII fields extracted from documents are encrypted in the database using AES-256:
+
+- Aadhaar Number
+- PAN Number
+- Passport Number
+- Driving Licence Number
+- Bank Account Number
+
+The encryption key is stored in your `.env` file — on your machine only. The developer never has access to this key.
+
+---
+
+## Access Control
+
+| User Role | Capability |
+|---|---|
+| Registered User | Access only their own documents, graphs, and chat history |
+| Admin (first user) | Same as regular user — no elevated data access currently |
+| Developer | Zero access — no backend access, no DB access, no file access |
+
+Row-level user isolation is enforced in every database query. A user cannot access another user's documents even if they know the document ID.
+
+---
+
+## Incident Response
+
+Since all data is self-hosted, you are responsible for your own incident response. We recommend:
+
+1. **Regular backups** — run `bash scripts/backup.sh` daily.
+2. **Strong passwords** — use at least 16 characters for `POSTGRES_PASSWORD` and your user account.
+3. **Firewall rules** — on VPS deployments, only expose ports 80 and 443 publicly.
+4. **Updates** — keep NeuroVault updated with `git pull && docker compose up -d --build`.
+
+---
+
+## Data Deletion
+
+You can permanently delete all data by:
+
+1. Deleting individual documents via the Vault UI (triggers cascaded purge across DB, file system, and ChromaDB).
+2. Deleting your account (triggers cascaded deletion of all documents and records).
+3. Destroying the entire deployment: `docker compose down -v` removes all Docker volumes and all data.

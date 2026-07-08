@@ -1,43 +1,101 @@
-version: '3.8'
-
 services:
+
+  # ── PostgreSQL Database ────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: neurovault_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-neurovault}
+      POSTGRES_USER: ${POSTGRES_USER:-nv_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nv_user} -d ${POSTGRES_DB:-neurovault}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - neurovault-net
+
+  # ── FastAPI Backend ────────────────────────────────────────────────────────
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - "8001:8000"
-    volumes:
-      - ./backend/uploads:/app/uploads
-      - ./backend/vector_store:/app/vector_store
-      - ./backend/data:/app/data
-      - ./backend/cache/huggingface:/root/.cache/huggingface
-      - ./backend/cache/easyocr:/root/.easyocr
-    environment:
-      - ENV_MODE=production
-      - DATABASE_URL=sqlite:////app/data/neurovault.db
-      - CHROMA_PERSIST_DIR=/app/vector_store
-      - UPLOADS_DIR=/app/uploads
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - OLLAMA_MODEL=qwen2.5:1.5b
-    depends_on:
-      - ollama
+    container_name: neurovault_backend
     restart: unless-stopped
+    environment:
+      ENV_MODE: production
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-neurovault}
+      POSTGRES_USER: ${POSTGRES_USER:-nv_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-CHANGE_ME_run_openssl_rand_hex_32}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-CHANGE_ME_run_fernet_generate_key}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      CHROMA_PERSIST_DIR: /data/chromadb
+      UPLOADS_DIR: /data/uploads
+      MODEL_CACHE_DIR: /data/model-cache
+    volumes:
+      - uploads:/data/uploads
+      - chromadb-data:/data/chromadb
+      - model-cache:/data/model-cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - neurovault-net
 
+  # ── React Frontend ─────────────────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    ports:
-      - "80:80"
+    container_name: neurovault_frontend
+    restart: unless-stopped
     depends_on:
       - backend
-    restart: unless-stopped
+    networks:
+      - neurovault-net
 
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ./backend/cache/ollama:/root/.ollama
+  # ── Nginx Reverse Proxy ────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: neurovault_nginx
     restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - neurovault-net
+
+# ── Named Volumes (Persistent Storage) ────────────────────────────────────────
+volumes:
+  postgres-data:
+    driver: local
+  uploads:
+    driver: local
+  chromadb-data:
+    driver: local
+  model-cache:
+    driver: local
+
+# ── Internal Docker Network ───────────────────────────────────────────────────
+networks:
+  neurovault-net:
+    driver: bridge
