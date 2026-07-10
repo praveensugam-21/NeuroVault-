@@ -2,7 +2,7 @@ import os
 import logging
 from app.config import settings
 
-logger = logging.getLogger("neurovault.voice")
+logger = logging.getLogger("iris.voice")
 
 _whisper_model = None
 

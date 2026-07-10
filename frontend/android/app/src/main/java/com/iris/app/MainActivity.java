@@ -1,4 +1,4 @@
-package com.neurovault.app;
+package com.iris.app;
 
 import com.getcapacitor.BridgeActivity;
 

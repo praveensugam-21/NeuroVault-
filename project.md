@@ -1,12 +1,12 @@
-# NeuroVault — Technical Specification
+# IRIS  Technical Specification
 
-This document details the system design, pipeline mechanics, Knowledge Graph architecture, and security rules of the NeuroVault platform.
+This document details the system design, pipeline mechanics, Knowledge Graph architecture, and security rules of the IRIS platform.
 
 ---
 
 ## 1. System Architecture
 
-NeuroVault is a local-first application designed to orchestrate document storage, metadata extraction, and RAG queries. It integrates a relational database, an embedded vector store, and a local OCR pipeline.
+IRIS is a local-first application designed to orchestrate document storage, metadata extraction, and RAG queries. It integrates a relational database, an embedded vector store, and a local OCR pipeline.
 
 ```mermaid
 graph TD
@@ -86,3 +86,5 @@ The system is designed to safeguard PII in compliance with standard data protect
 - **Real-Time Client Status Polling**: Replaced client-side simulated timers with a status check loop that queries the API every 800ms, immediately updating the UI once backend processing is completed.
 - **Smart Folder Sidebar Navigation**: Fixed folder clicks appearing to do nothing by adding router navigation to redirect users to `/vault` upon folder selection.
 - **PyTorch/torchvision Compatibility**: Resolved a runtime crash (`torchvision::nms does not exist`) by packaging both `torch` and `torchvision` CPU-builds together in the installation step.
+- **Memory Assistant Overhaul**: Completely overhauled the RAG engine to support context-aware conversation history (multi-turn), multi-stage search retrieval (vector + SQL keyword fallback), robust decrypted metadata field extraction, and an offline privacy-first local rules engine for 100% reliable local answers when Ollama is unavailable. Improved frontend rendering using `react-markdown` + `remark-gfm` for beautiful tables, lists, and citations with similarity match percentages.
+

@@ -1,16 +1,16 @@
 # Technology Choices & AI Privacy Guide
 
-This document explains why we chose the core technologies for NeuroVault's self-hosted platform and clarifies how local privacy is maintained.
+This document explains why we chose the core technologies for IRIS's self-hosted platform and clarifies how local privacy is maintained.
 
 ---
 
-## 1. Are We Using Gemini or Ollama?
+## 1. Are We Using Gemini, Ollama, or Local Rules?
 
-**NeuroVault is 100% local, offline, and runs entirely on Ollama.**
+**IRIS is 100% local, offline, and runs on a smart Local Rules Engine or local Ollama.**
 
-* **No Active Gemini API**: There are no active API integrations or code hooks calling Google's Gemini services.
-* **Why `GEMINI_API_KEY` exists**: A setting placeholder for `GEMINI_API_KEY` exists in the configuration class and environment file template solely to support future development should you want to add cloud failovers. 
-* **100% Privacy by Default**: By using Ollama on your local network/host, your document content, OCR, search vectors, and RAG conversations never leave your device.
+* **No Gemini Integration**: There are no active API calls to Google's Gemini services, satisfying strict data privacy constraints.
+* **Smart Local Rules Engine**: If Ollama is offline or not installed, the platform uses a local, regex-driven, decrypted database reasoning system. It extracts facts (like PAN, Aadhaar, marks, salary details) directly from database records instantly with 0% CPU overhead, 100% private and offline.
+* **Ollama (Optional local LLM)**: Ollama runs inside a container. It reads model files completely locally from your device's workspace folder (on E: drive to preserve space on your C: drive), guaranteeing that no query data or document details leave your server.
 
 ---
 
@@ -18,10 +18,10 @@ This document explains why we chose the core technologies for NeuroVault's self-
 
 Here is the technical reasoning behind our architectural choices:
 
-### A. Why PostgreSQL? (Instead of SQLite or MongoDB)
-* **SQLite (Why we migrated away)**: SQLite is great for single-user apps, but it locks the entire database file during write operations. If you share your instance with friends or family, and multiple users upload documents at the same time, SQLite will throw `database is locked` errors.
-* **PostgreSQL (Why we shifted)**: PostgreSQL handles thousands of concurrent read/write transactions seamlessly. It supports connection pooling (`QueuePool`), row-level security (RLS), and proper index configurations, making it the industry standard for production-grade self-hosting.
-* **Why not MongoDB**: NeuroVault's data is highly relational. A user owns documents, documents have tags/entities, and documents link to other documents via graph edges. Relational databases enforce strict integrity rules (e.g. if a document is deleted, all its tags, entities, and graph relations are instantly deleted as well).
+### A. SQLite (Development) & PostgreSQL (Production)
+* **SQLite (Hybrid local setup)**: SQLite is used as the default development database. We configured it with `StaticPool`, `check_same_thread=False`, and **WAL (Write-Ahead Logging)** mode. This ensures multithreaded request safety and prevents database locking exceptions.
+* **PostgreSQL (Production scaling)**: IRIS easily scales to PostgreSQL 15 in production/Docker environments, handling concurrent transactions and connection pooling seamlessly.
+* **Why not MongoDB**: IRIS's data is highly relational. A user owns documents, documents have tags/entities, and documents link to other documents via graph edges. Relational databases enforce strict integrity rules (e.g. if a document is deleted, all its tags, entities, and graph relations are instantly deleted as well).
 
 ### B. Why Argon2id? (Instead of Bcrypt or SHA-256)
 * **The Problem**: Standard hashing algorithms like SHA-256 can be calculated billions of times per second on modern graphics cards, making brute-force attacks easy if a database is leaked.

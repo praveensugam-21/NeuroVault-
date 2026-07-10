@@ -1,4 +1,4 @@
-# NeuroVault AI — REST API Endpoint Documentation
+# IRIS AI — REST API Endpoint Documentation
 
 This document lists the REST API endpoints provided by the FastAPI backend.
 

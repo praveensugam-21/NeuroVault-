@@ -1,12 +1,12 @@
-# NeuroVault — Security & Privacy Policy
+# IRIS — Security & Privacy Policy
 
-This document is the formal security and privacy policy for the NeuroVault self-hosted platform. It explains what data is collected, where it is stored, who can access it, and how it is protected.
+This document is the formal security and privacy policy for the IRIS self-hosted platform. It explains what data is collected, where it is stored, who can access it, and how it is protected.
 
 ---
 
 ## Privacy Statement
 
-**NeuroVault is 100% self-hosted. The developer and publisher of this software has no access to your data — ever.**
+**IRIS is 100% self-hosted. The developer and publisher of this software has no access to your data — ever.**
 
 The developer:
 - Does not receive your documents.
@@ -16,7 +16,7 @@ The developer:
 - Does not receive your chat history or AI query logs.
 - Does not collect telemetry, crash reports, or usage statistics.
 
-Your NeuroVault instance is exclusively under your control. You are the only person with access to your data.
+Your IRIS instance is exclusively under your control. You are the only person with access to your data.
 
 ---
 
@@ -34,7 +34,7 @@ Your NeuroVault instance is exclusively under your control. You are the only per
 
 ## Data Transmitted Externally
 
-**No data is transmitted externally. NeuroVault operates 100% offline.**
+**No data is transmitted externally. IRIS operates 100% offline.**
 
 - All processing, OCR, classification, and metadata extraction are completed locally on your server.
 - The Memory Assistant queries run against your local Ollama server.
@@ -89,7 +89,7 @@ Since all data is self-hosted, you are responsible for your own incident respons
 1. **Regular backups** — run `bash scripts/backup.sh` daily.
 2. **Strong passwords** — use at least 16 characters for `POSTGRES_PASSWORD` and your user account.
 3. **Firewall rules** — on VPS deployments, only expose ports 80 and 443 publicly.
-4. **Updates** — keep NeuroVault updated with `git pull && docker compose up -d --build`.
+4. **Updates** — keep IRIS updated with `git pull && docker compose up -d --build`.
 
 ---
 

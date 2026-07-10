@@ -31,11 +31,13 @@ export interface ChatCitation {
   document_name: string;
   category: string;
   snippet: string;
+  similarity?: number;
 }
 
 export interface ChatResponse {
   answer: string;
   citations: ChatCitation[];
+  retrieval_method?: string;
 }
 
 export interface GraphNode {

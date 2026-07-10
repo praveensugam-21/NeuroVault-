@@ -1,4 +1,4 @@
-# NeuroVault AI — Natural Language Query Engine
+# IRIS AI — Natural Language Query Engine
 
 This document explains the query patterns, reasoning chains, and local fallback rules used by the AI Memory Assistant to answer user questions.
 

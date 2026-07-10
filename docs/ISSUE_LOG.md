@@ -1,6 +1,6 @@
-# NeuroVault AI — Project Issue & Debug Log
+# IRIS AI — Project Issue & Debug Log
 
-This file is a running log of all failures, errors, installation bugs, and logic issues encountered during the development of NeuroVault AI, along with their root causes, debugging steps, and resolutions.
+This file is a running log of all failures, errors, installation bugs, and logic issues encountered during the development of IRIS AI, along with their root causes, debugging steps, and resolutions.
 
 ---
 
@@ -125,16 +125,16 @@ This file is a running log of all failures, errors, installation bugs, and logic
   sqlite3.OperationalError: unable to open database file
   ```
 - **Root Cause:**
-  In `docker-compose.yml`, the volume `- ./backend/neurovault.db:/app/neurovault.db` mapped a non-existent file on the host. When a file volume source does not exist, Docker automatically initializes it as a directory. SQLite crashed trying to open a directory as a DB file.
+  In `docker-compose.yml`, the volume `- ./backend/iris.db:/app/iris.db` mapped a non-existent file on the host. When a file volume source does not exist, Docker automatically initializes it as a directory. SQLite crashed trying to open a directory as a DB file.
 - **What I Tried:**
-  - Inspected the host filesystem mode of `backend/neurovault.db` and confirmed it was a directory (`Mode: d-----`).
+  - Inspected the host filesystem mode of `backend/iris.db` and confirmed it was a directory (`Mode: d-----`).
 - **Fix:**
   Deleted the folder and updated `docker-compose.yml` to map a directory instead of a file:
   ```yaml
   volumes:
     - ./backend/data:/app/data
   environment:
-    - DATABASE_URL=sqlite:////app/data/neurovault.db
+    - DATABASE_URL=sqlite:////app/data/iris.db
   ```
 - **Learning:**
   Never map individual SQLite files directly in Docker volumes. Always map the parent directory (e.g. `data/` folder) to prevent Docker from creating dummy directories.
@@ -159,7 +159,7 @@ This file is a running log of all failures, errors, installation bugs, and logic
 - **File:** [Dockerfile](file:///e:/Desktop/AI%20CHATBOT/backend/Dockerfile)
 - **Error Message:**
   ```text
-  ERROR:neurovault.ocr:Failed to initialize EasyOCR: operator torchvision::nms does not exist
+  ERROR:iris.ocr:Failed to initialize EasyOCR: operator torchvision::nms does not exist
   ```
 - **Root Cause:**
   `torch` (CPU) and `easyocr` (which auto-installed regular `torchvision`) were installed in separate steps, resulting in incompatible torchvision wheels. This broke the torchvision C++ extensions loader, preventing EasyOCR from starting.
@@ -177,7 +177,7 @@ This file is a running log of all failures, errors, installation bugs, and logic
 - **File:** [ocr_service.py](file:///e:/Desktop/AI%20CHATBOT/backend/app/services/ocr_service.py)
 - **Error Message:**
   ```text
-  WARNING:neurovault.ocr:Local EasyOCR does not support PDF files directly. Returning empty text.
+  WARNING:iris.ocr:Local EasyOCR does not support PDF files directly. Returning empty text.
   ```
 - **Root Cause:**
   Digital text parsers like `pypdf` return empty text for scanned PDFs, and local `EasyOCR` only handles image file formats. Scanned PDFs had empty OCR text outputs, resulting in classification failures.

@@ -1,4 +1,4 @@
-# NeuroVault AI — Vector Database & RAG Pipeline
+# IRIS AI — Vector Database & RAG Pipeline
 
 This document explains the vector search mechanics and RAG (Retrieval-Augmented Generation) pipeline used in the AI Memory Assistant.
 

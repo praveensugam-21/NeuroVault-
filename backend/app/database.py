@@ -1,20 +1,42 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.pool import QueuePool, StaticPool, NullPool
 from app.config import settings
 
-# PostgreSQL engine with connection pooling
-# pool_size: number of persistent connections kept alive
-# max_overflow: extra connections allowed above pool_size under burst load
-engine = create_engine(
-    settings.DATABASE_URL,
-    poolclass=QueuePool,
-    pool_size=10,
-    max_overflow=20,
-    pool_pre_ping=True,        # Test connections before use to detect stale connections
-    pool_recycle=3600,         # Recycle connections every 1 hour
-    echo=False                 # Set True in dev to log SQL queries
-)
+db_url = settings.effective_database_url
+_is_sqlite = db_url.startswith("sqlite")
+
+if _is_sqlite:
+    # SQLite does NOT support multi-threaded connection pools with pool_size/max_overflow.
+    # Use StaticPool (in-memory single connection) or a simple connect_args approach.
+    # check_same_thread=False is required for FastAPI's multi-threaded request handling.
+    engine = create_engine(
+        db_url,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+        echo=False,
+    )
+
+    # Enable WAL mode for better concurrent read performance with SQLite
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+else:
+    # PostgreSQL — full connection pool support
+    engine = create_engine(
+        db_url,
+        poolclass=QueuePool,
+        pool_size=10,
+        max_overflow=20,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+        echo=False,
+    )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

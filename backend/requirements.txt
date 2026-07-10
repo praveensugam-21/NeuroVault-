@@ -27,3 +27,4 @@ argon2-cffi
 cryptography
 # Google Gemini SDK
 google-generativeai
+pymupdf

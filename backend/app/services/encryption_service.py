@@ -2,7 +2,7 @@ import logging
 from cryptography.fernet import Fernet, InvalidToken
 from app.config import settings
 
-logger = logging.getLogger("neurovault.encryption")
+logger = logging.getLogger("iris.encryption")
 
 _fernet_instance = None
 

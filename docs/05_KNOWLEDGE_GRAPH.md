@@ -1,4 +1,4 @@
-# NeuroVault AI — Knowledge Graph Logic & Entity Extraction
+# IRIS AI — Knowledge Graph Logic & Entity Extraction
 
 This document explains the Knowledge Graph module, showing how documents are parsed into nodes and links, and how they are visualized on the frontend canvas.
 

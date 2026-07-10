@@ -14,7 +14,9 @@ class ChatCitation(BaseModel):
     document_name: str
     category: str
     snippet: str
+    similarity: Optional[float] = Field(default=1.0, description="Semantic similarity score")
 
 class ChatResponse(BaseModel):
     answer: str
     citations: List[ChatCitation] = []
+    retrieval_method: Optional[str] = Field(default="local_rules", description="Engine used to retrieve/answer")

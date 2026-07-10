@@ -1,16 +1,16 @@
-# NeuroVault
+# IRIS
 
 **A secure, self-hosted personal document vault. Your data stays on your machine — always.**
 
-NeuroVault is an open-source document intelligence platform you deploy on your own hardware. Upload, classify, search, and query your documents using local OCR, named entity recognition, vector search, and a local Ollama-powered Memory Assistant — all without sending any file or query to external servers.
+IRIS is an open-source document intelligence platform you deploy on your own hardware. Upload, classify, search, and query your documents using local OCR, named entity recognition, vector search, and a local Ollama-powered Memory Assistant — all without sending any file or query to external servers.
 
 > The developer distributes the software. You own everything else.
 
 ---
 
-## What Makes NeuroVault Different?
+## What Makes IRIS Different?
 
-| Feature | Traditional Cloud Apps | NeuroVault |
+| Feature | Traditional Cloud Apps | IRIS |
 |---|---|---|
 | Document storage | Provider's cloud | Your machine only |
 | Who can see your data | Provider + their staff | Only you |
@@ -28,7 +28,7 @@ NeuroVault is an open-source document intelligence platform you deploy on your o
 - **Metadata Extraction** — Pulls structured fields like Aadhaar numbers, PAN numbers, DOBs, expiry dates, and bank account numbers. Sensitive fields are encrypted at rest using AES-256.
 - **Knowledge Graph** — Links documents through shared entities (names, organisations, dates). Visualise connections between your Aadhaar, PAN, and bank statements.
 - **Semantic Search** — Powered by SentenceTransformer embeddings (ChromaDB). Find the document by meaning, not just keywords.
-- **Memory Assistant** — Ask natural language questions about your vault ("When does my driving licence expire?") and get cited answers via your local Ollama model.
+- **Memory Assistant** — Ask natural language questions about your vault ("When does my driving licence expire?") and get structured, cited answers. Uses a **100% private local rules engine** or your local Ollama instance for answering queries completely offline, keeping all personal details secure on your device.
 - **Document Lock** — Lock sensitive files behind a secondary PIN. Locked files are excluded from all search results and AI queries.
 - **Audit Logs** — Every action (upload, view, lock, unlock, delete, query) is logged in your private database.
 
@@ -44,8 +44,8 @@ NeuroVault is an open-source document intelligence platform you deploy on your o
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/praveensugam-21/NeuroVault-.git
-cd NeuroVault-
+git clone https://github.com/praveensugam-21/IRIS-.git
+cd IRIS-
 
 # 2. Create your environment file
 cp .env.example .env
@@ -82,7 +82,7 @@ Paste the output values into your `.env` file.
 
 ## Supported Platforms
 
-NeuroVault requires no code changes to deploy on any of the following:
+IRIS requires no code changes to deploy on any of the following:
 
 | Platform | Notes |
 |---|---|
@@ -146,4 +146,4 @@ For local testing after first boot:
 
 ## License
 
-NeuroVault is open-source software. You are free to use, modify, and self-host it.
+IRIS is open-source software. You are free to use, modify, and self-host it.

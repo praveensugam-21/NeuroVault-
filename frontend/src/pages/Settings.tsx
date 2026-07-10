@@ -69,11 +69,7 @@ export const Settings: React.FC = () => {
       )
     ) {
       try {
-        const docsResponse = await api.get('/api/documents/');
-        const docs = docsResponse.data;
-        for (const doc of docs) {
-          await api.delete(`/api/documents/${doc.id}`);
-        }
+        await api.delete('/api/documents/');
         alert('Vault wiped successfully.');
         fetchDocuments();
         fetchStats();

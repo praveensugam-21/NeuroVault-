@@ -1,14 +1,21 @@
-# NeuroVault Database Architecture & Management Guide
+# IRIS Database Architecture & Management Guide
 
 This document describes the PostgreSQL database schema, Alembic migration workflow, connection pooling, pgAdmin access, and backup procedures.
 
 ---
 
-## 1. Database Engine: PostgreSQL
+## 1. Database Engine: SQLite / PostgreSQL
 
-NeuroVault uses **PostgreSQL 15** as its relational database. Every self-hosted deployment runs its own PostgreSQL container — isolated from all other users and from the developer.
+By default in development, IRIS uses **SQLite** (`sqlite:///./iris.db`). In production/Docker environments, it automatically scales to **PostgreSQL 15**. Every deployment runs its own relational database instance, ensuring absolute privacy.
 
-There is no shared database. No one else can access your data at the database level.
+For SQLite:
+- Single file database stored locally.
+- Configured with `StaticPool` and `check_same_thread=False` to safely handle concurrent asynchronous requests.
+- Runs in **WAL (Write-Ahead Logging)** mode for enhanced concurrent read/write throughput.
+
+For PostgreSQL:
+- Exposes connection pooling and robust production scaling.
+- Configured via environment variables.
 
 ---
 
@@ -101,7 +108,7 @@ The database engine is configured with SQLAlchemy's `QueuePool`:
 
 ## 5. Schema Migrations (Alembic)
 
-NeuroVault uses **Alembic** to manage database schema changes. Migrations ensure your database structure stays in sync with the application code across updates.
+IRIS uses **Alembic** to manage database schema changes. Migrations ensure your database structure stays in sync with the application code across updates.
 
 ### How to initialise Alembic (first-time setup only)
 
@@ -142,15 +149,15 @@ pgAdmin is an optional service you can add to your `docker-compose.yml` to inspe
 ```yaml
 pgadmin:
   image: dpage/pgadmin4
-  container_name: neurovault_pgadmin
+  container_name: iris_pgadmin
   restart: unless-stopped
   environment:
-    PGADMIN_DEFAULT_EMAIL: admin@neurovault.local
+    PGADMIN_DEFAULT_EMAIL: admin@iris.local
     PGADMIN_DEFAULT_PASSWORD: admin
   ports:
     - "5050:80"
   networks:
-    - neurovault-net
+    - iris-net
 ```
 
 ### Connect pgAdmin to your database
@@ -159,7 +166,7 @@ pgadmin:
 2. Log in with the credentials above.
 3. Right-click **Servers → Register → Server**.
 4. Fill in:
-   - **Name**: `NeuroVault`
+   - **Name**: `IRIS`
    - **Host**: `postgres`
    - **Port**: `5432`
    - **Database**: value of your `POSTGRES_DB` env var

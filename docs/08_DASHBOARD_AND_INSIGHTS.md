@@ -1,4 +1,4 @@
-# NeuroVault AI — Dashboard Analytics & Timeline Assembly
+# IRIS AI — Dashboard Analytics & Timeline Assembly
 
 This document explains the mathematical formulas and data aggregation rules that power the Dashboard Analytics page.
 

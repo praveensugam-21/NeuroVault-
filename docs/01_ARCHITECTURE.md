@@ -1,12 +1,12 @@
-# NeuroVault — System Architecture
+# IRIS — System Architecture
 
-This document explains the full system architecture of a self-hosted NeuroVault deployment.
+This document explains the full system architecture of a self-hosted IRIS deployment.
 
 ---
 
 ## 1. The Self-Hosted Model
 
-NeuroVault is not a SaaS platform. Every user runs their own complete, independent instance. The diagram below shows one such deployment:
+IRIS is not a SaaS platform. Every user runs their own complete, independent instance. The diagram below shows one such deployment:
 
 ```
 ┌──────────────────────────── Your Computer / Server ────────────────────────────┐
@@ -123,7 +123,7 @@ Client                 Nginx                Backend               PostgreSQL
 
 ## 5. Data Isolation Between Users
 
-Even on a single NeuroVault instance shared between family members or colleagues, all data is strictly isolated:
+Even on a single IRIS instance shared between family members or colleagues, all data is strictly isolated:
 
 - Every database query is filtered by `user_id`.
 - ChromaDB vector searches use `where={"user_id": user_id}` metadata filters.

@@ -1,4 +1,4 @@
-# NeuroVault AI — Weekly Knowledge Digest
+# IRIS AI — Weekly Knowledge Digest
 
 This document explains the backend heuristics that compile the personalized weekly digest.
 

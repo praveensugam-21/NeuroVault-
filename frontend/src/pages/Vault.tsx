@@ -6,6 +6,7 @@ import {
   List, Grid, Download, ArrowUpDown, MoreVertical, Eye
 } from 'lucide-react';
 import type { DocumentBrief, DocumentDetail } from '../types';
+import { getApiUrl } from '../services/api';
 
 export const Vault: React.FC = () => {
   const { 
@@ -150,7 +151,7 @@ export const Vault: React.FC = () => {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `neurovault_export_${activeCategory || 'all'}.csv`);
+    link.setAttribute("download", `iris_export_${activeCategory || 'all'}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -447,6 +448,15 @@ export const Vault: React.FC = () => {
               <p className="text-[10px] text-[#6B7280] dark:text-slate-400">{detail.document_type}</p>
             </div>
             <div className="flex items-center gap-1">
+              <a
+                href={`${getApiUrl()}/api/documents/${detail.id}/file?token=${encodeURIComponent(localStorage.getItem('access_token') || '')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-1.5 hover:bg-[#F3F4F6] dark:hover:bg-slate-800 rounded text-[#6B7280] dark:text-slate-400 hover:text-[#111827]"
+                title="View/Download Original File"
+              >
+                <Download className="w-4 h-4" />
+              </a>
               <button
                 onClick={() => toggleLock(detail)}
                 className="p-1.5 hover:bg-[#F3F4F6] dark:hover:bg-slate-800 rounded text-[#6B7280] dark:text-slate-400 hover:text-[#111827]"

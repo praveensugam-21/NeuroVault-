@@ -1,6 +1,6 @@
-# NeuroVault — Deployment Guide
+# IRIS — Deployment Guide
 
-This document covers every aspect of deploying, configuring, securing, updating, and backing up your NeuroVault instance.
+This document covers every aspect of deploying, configuring, securing, updating, and backing up your IRIS instance.
 
 ---
 
@@ -22,8 +22,8 @@ This document covers every aspect of deploying, configuring, securing, updating,
 ### Step 1 — Clone the Repository
 
 ```bash
-git clone https://github.com/praveensugam-21/NeuroVault-.git
-cd NeuroVault-
+git clone https://github.com/praveensugam-21/IRIS-.git
+cd IRIS-
 ```
 
 ### Step 2 — Create Your Environment File
@@ -96,7 +96,7 @@ mkdir -p nginx/certs
 openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
   -keyout nginx/certs/server.key \
   -out nginx/certs/server.crt \
-  -subj "/CN=neurovault.local"
+  -subj "/CN=iris.local"
 ```
 
 Then update `nginx/nginx.conf` to enable the HTTPS server block (uncomment the `443` section).
@@ -119,7 +119,7 @@ caddy:
     - ./Caddyfile:/etc/caddy/Caddyfile:ro
     - caddy-data:/data
   networks:
-    - neurovault-net
+    - iris-net
 ```
 
 3. Create a `Caddyfile` in the root:
@@ -135,17 +135,51 @@ Caddy automatically obtains and renews a free Let's Encrypt certificate.
 
 ---
 
-## 5. Environment Variable Reference
-
 | Variable | Required | Description |
 |---|---|---|
-| `POSTGRES_DB` | Yes | Database name (default: `neurovault`) |
+| `POSTGRES_DB` | Yes | Database name (default: `iris`) |
 | `POSTGRES_USER` | Yes | Database username |
 | `POSTGRES_PASSWORD` | **Yes** | Strong database password |
 | `JWT_SECRET_KEY` | **Yes** | Random 32-byte hex string for JWT signing |
 | `ENCRYPTION_KEY` | **Yes** | Fernet key for AES-256 field encryption |
+| `OLLAMA_BASE_URL` | No | URL to containerized or host Ollama (default: `http://ollama:11434`) |
+| `OLLAMA_MODEL` | No | Name of the local LLM model to pull/use (default: `llama3.2`) |
 | `UPLOAD_DIRECTORY` | No | Path inside container (default: `/data/uploads`) |
 | `CHROMADB_PATH` | No | Path inside container (default: `/data/chromadb`) |
+
+---
+
+## 5.1. Containerized Ollama (Local AI Integration)
+
+IRIS includes a containerized **Ollama** service out-of-the-box, allowing you to ask conversational questions about your vault entirely offline.
+
+### Drive Space Management (Non-C: Drive Mount)
+Downloading local LLM models requires **2GB to 4GB+ of storage space**. 
+
+To protect your system drive (`C:`) from running out of space, the `docker-compose.yml` mounts Ollama's data volume to a local workspace folder:
+```yaml
+  ollama:
+    image: ollama/ollama:latest
+    container_name: iris_ollama
+    volumes:
+      - ./ollama_data:/root/.ollama
+```
+Since your project workspace is located on the **E: drive** (`e:\Desktop\AI CHATBOT`), all downloaded models and caches are stored entirely on the E: drive.
+
+### Initial Model Setup (100% Private Pull)
+Once your containers are running, you must download the local model to initialize the Ollama container. Run the following command in your terminal:
+
+```bash
+docker exec -it iris_ollama ollama pull llama3.2
+```
+
+This will download the lightweight `llama3.2` model (approx. 2.0GB) directly into the `./ollama_data` folder on your E: drive.
+
+### Local Rules Fallback
+While the model is pulling, or if Ollama is offline/unreachable:
+- The backend automatically detects the unavailability of Ollama.
+- It routes query tasks to the **Smart Local Rules Engine**, which securely decrypts and extracts fields (like Aadhaar, PAN, DL, salary, and marks) directly from database tables, generating instant cited answers with zero delays.
+
 
 ---
 
@@ -165,7 +199,7 @@ Creates a timestamped `.tar.gz` archive inside the `backups/` folder containing:
 ### Restore from a Backup
 
 ```bash
-bash scripts/restore.sh backups/neurovault_backup_YYYYMMDD_HHMMSS.tar.gz
+bash scripts/restore.sh backups/iris_backup_YYYYMMDD_HHMMSS.tar.gz
 ```
 
 > [!WARNING]
@@ -178,12 +212,12 @@ Add a cron job to run backups automatically:
 ```bash
 crontab -e
 # Add this line to run a backup every day at 2 AM:
-0 2 * * * cd /path/to/NeuroVault- && bash scripts/backup.sh >> /var/log/neurovault-backup.log 2>&1
+0 2 * * * cd /path/to/IRIS- && bash scripts/backup.sh >> /var/log/iris-backup.log 2>&1
 ```
 
 ---
 
-## 7. Updating NeuroVault
+## 7. Updating IRIS
 
 ```bash
 # 1. Pull latest source code

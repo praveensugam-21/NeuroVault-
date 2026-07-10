@@ -1,6 +1,6 @@
-# NeuroVault AI — Smart Vault Directory Structure
+# IRIS AI — Smart Vault Directory Structure
 
-This document details the virtual folder tree hierarchy used by NeuroVault AI to auto-organize your documents without manual labeling.
+This document details the virtual folder tree hierarchy used by IRIS AI to auto-organize your documents without manual labeling.
 
 ---
 

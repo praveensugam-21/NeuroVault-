@@ -1,6 +1,6 @@
-# NeuroVault AI — Extraction Quality & Validation Standards
+# IRIS AI — Extraction Quality & Validation Standards
 
-This document explains how NeuroVault AI validates data extraction, determines confidence scores, and flags anomalies.
+This document explains how IRIS AI validates data extraction, determines confidence scores, and flags anomalies.
 
 ---
 

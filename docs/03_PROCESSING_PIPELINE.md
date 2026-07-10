@@ -1,6 +1,6 @@
-# NeuroVault AI — 15-Step Async Document Processing Pipeline
+# IRIS AI — 15-Step Async Document Processing Pipeline
 
-This document explains the step-by-step lifecycle of a document as it passes through the NeuroVault processing pipeline. Every stage is asynchronous to prevent locking the main thread.
+This document explains the step-by-step lifecycle of a document as it passes through the IRIS processing pipeline. Every stage is asynchronous to prevent locking the main thread.
 
 ---
 

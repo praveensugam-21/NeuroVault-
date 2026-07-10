@@ -3,6 +3,6 @@ __pycache__
 .pytest_cache
 uploads
 vector_store
-neurovault.db
+iris.db
 .git
 .gitignore

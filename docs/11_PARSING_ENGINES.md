@@ -1,13 +1,13 @@
-# NeuroVault — Text Extraction & Parsing Engines
+# IRIS — Text Extraction & Parsing Engines
 
-This document explains the roles of the local text extraction and natural language parsing engines used inside the NeuroVault document intelligence system.
+This document explains the roles of the local text extraction and natural language parsing engines used inside the IRIS document intelligence system.
 
 ---
 
 ## 1. Local OCR Engine (EasyOCR & Direct PDF Extraction)
 
 ### What it is
-NeuroVault uses a local text extraction engine. For digital documents (like digital PDFs), it extracts text layers directly using `pypdf`. For scanned documents or image uploads, it runs **EasyOCR** (built on PyTorch, running CRAFT text detection and ResNet+LSTM recognition models) entirely locally on your device.
+IRIS uses a local text extraction engine. For digital documents (like digital PDFs), it extracts text layers directly using `pypdf`. For scanned documents or image uploads, it runs **EasyOCR** (built on PyTorch, running CRAFT text detection and ResNet+LSTM recognition models) entirely locally on your device.
 
 ### Why we use it
 To guarantee the system is **100% local-first and operational offline**, all text extraction runs on your machine. EasyOCR allows us to handle image-based documents without needing external network calls or cloud API keys.

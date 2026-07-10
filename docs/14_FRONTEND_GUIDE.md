@@ -1,4 +1,4 @@
-# NeuroVault AI — Frontend Developer & UI Guide
+# IRIS AI — Frontend Developer & UI Guide
 
 This document details the frontend architecture, state management with Zustand, and layout hierarchies.
 

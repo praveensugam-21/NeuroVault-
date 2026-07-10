@@ -1,6 +1,6 @@
-# NeuroVault AI — Universal Document Taxonomy
+# IRIS AI — Universal Document Taxonomy
 
-This document lists the complete taxonomy of supported documents in NeuroVault AI. It details the categories, document types, and the exact structured JSON schema fields extracted by the AI Engine.
+This document lists the complete taxonomy of supported documents in IRIS AI. It details the categories, document types, and the exact structured JSON schema fields extracted by the AI Engine.
 
 ---
 

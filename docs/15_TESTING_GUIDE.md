@@ -1,4 +1,4 @@
-# NeuroVault AI — Testing & Verification Guide
+# IRIS AI — Testing & Verification Guide
 
 This document explains how to run automated unit tests and verify the code structure.
 

@@ -1,41 +1,43 @@
 services:
 
-  # ── PostgreSQL Database ────────────────────────────────────────────────────
+  # ── PostgreSQL Database ─────────────────────────────────────────────────────────
   postgres:
     image: postgres:15-alpine
-    container_name: neurovault_postgres
+    container_name: iris_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-neurovault}
-      POSTGRES_USER: ${POSTGRES_USER:-nv_user}
+      POSTGRES_DB: ${POSTGRES_DB:-iris}
+      POSTGRES_USER: ${POSTGRES_USER:-iris_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nv_user} -d ${POSTGRES_DB:-neurovault}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-iris_user} -d ${POSTGRES_DB:-iris}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - neurovault-net
+      - iris-net
 
-  # ── FastAPI Backend ────────────────────────────────────────────────────────
+  # ── FastAPI Backend ─────────────────────────────────────────────────────────
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: neurovault_backend
+    container_name: iris_backend
     restart: unless-stopped
     environment:
       ENV_MODE: production
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
-      POSTGRES_DB: ${POSTGRES_DB:-neurovault}
-      POSTGRES_USER: ${POSTGRES_USER:-nv_user}
+      POSTGRES_DB: ${POSTGRES_DB:-iris}
+      POSTGRES_USER: ${POSTGRES_USER:-iris_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-CHANGE_ME_run_openssl_rand_hex_32}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-CHANGE_ME_run_fernet_generate_key}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
       CHROMA_PERSIST_DIR: /data/chromadb
       UPLOADS_DIR: /data/uploads
       MODEL_CACHE_DIR: /data/model-cache
@@ -47,6 +49,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      ollama:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -54,24 +58,37 @@ services:
       retries: 3
       start_period: 60s
     networks:
-      - neurovault-net
+      - iris-net
 
-  # ── React Frontend ─────────────────────────────────────────────────────────
+  # ── Containerized Ollama (Offline LLM) ──────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: iris_ollama
+    restart: unless-stopped
+    volumes:
+      # Mounts to local project folder (E: drive) to avoid filling up C: drive
+      - ./ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - iris-net
+
+  # ── React Frontend ────────────────────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: neurovault_frontend
+    container_name: iris_frontend
     restart: unless-stopped
     depends_on:
       - backend
     networks:
-      - neurovault-net
+      - iris-net
 
-  # ── Nginx Reverse Proxy ────────────────────────────────────────────────────
+  # ── Nginx Reverse Proxy ──────────────────────────────────────────────────────
   nginx:
     image: nginx:alpine
-    container_name: neurovault_nginx
+    container_name: iris_nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -83,9 +100,9 @@ services:
       - backend
       - frontend
     networks:
-      - neurovault-net
+      - iris-net
 
-# ── Named Volumes (Persistent Storage) ────────────────────────────────────────
+# ── Named Volumes (Persistent Storage) ──────────────────────────────────────────────
 volumes:
   postgres-data:
     driver: local
@@ -96,7 +113,7 @@ volumes:
   model-cache:
     driver: local
 
-# ── Internal Docker Network ───────────────────────────────────────────────────
+# ── Internal Docker Network ──────────────────────────────────────────────────────
 networks:
-  neurovault-net:
+  iris-net:
     driver: bridge

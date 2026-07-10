@@ -1,18 +1,18 @@
-# NeuroVault Security Policy & Data Protection Architecture
+# IRIS Security Policy & Data Protection Architecture
 
-NeuroVault is built on a strict privacy-first philosophy: the developer who builds and distributes this software has **zero access** to your data. This document details every security layer protecting your information.
+IRIS is built on a strict privacy-first philosophy: the developer who builds and distributes this software has **zero access** to your data. This document details every security layer protecting your information.
 
 ---
 
 ## 1. Core Privacy Guarantee — 100% Self-Hosted
 
-Every NeuroVault deployment is completely independent.
+Every IRIS deployment is completely independent.
 
 - **Your documents** are stored in a Docker volume on your own machine.
 - **Your database** is a private PostgreSQL instance inside your Docker network.
 - **Your vectors** are stored in a ChromaDB instance inside your Docker volume.
 - **Your AI conversations** are processed by the Gemini API directly (your key, your quota).
-- **No telemetry** — NeuroVault does not send usage statistics, error reports, or any data to any NeuroVault-owned server.
+- **No telemetry** — IRIS does not send usage statistics, error reports, or any data to any IRIS-owned server.
 
 The developer only distributes software code. They receive nothing else.
 
@@ -41,7 +41,7 @@ Accounts that were previously hashed with `bcrypt` are **automatically re-hashed
 
 ## 3. JWT Session Tokens — Access + Refresh Token Model
 
-NeuroVault uses a two-token session model for maximum security:
+IRIS uses a two-token session model for maximum security:
 
 | Token | Lifetime | Purpose |
 |---|---|---|
@@ -150,7 +150,7 @@ This protects against automated password-guessing attacks at the network layer, 
 
 ## 9. Secure Document Deletion — Complete Purge
 
-When a document is deleted, NeuroVault performs a cascaded purge across all layers:
+When a document is deleted, IRIS performs a cascaded purge across all layers:
 
 1. **Physical file** — deleted from the `uploads/` Docker volume.
 2. **Database records** — `documents`, `document_tags`, and `entities` rows deleted.
@@ -163,4 +163,4 @@ After deletion, no trace of the document remains in any storage layer.
 
 ## 10. Docker Network Isolation
 
-All services communicate via an internal Docker bridge network (`neurovault-net`). The PostgreSQL database and ChromaDB are **not exposed on any host port** — they are only reachable from inside the Docker network. Nginx is the only publicly accessible entrypoint.
+All services communicate via an internal Docker bridge network (`iris-net`). The PostgreSQL database and ChromaDB are **not exposed on any host port** — they are only reachable from inside the Docker network. Nginx is the only publicly accessible entrypoint.

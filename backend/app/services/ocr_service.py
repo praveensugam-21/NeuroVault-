@@ -3,7 +3,7 @@ import logging
 from PIL import Image
 from app.config import settings
 
-logger = logging.getLogger("neurovault.ocr")
+logger = logging.getLogger("iris.ocr")
 logging.basicConfig(level=logging.INFO)
 
 # Global variables for lazy loading local OCR
@@ -58,25 +58,28 @@ class OCRService:
                 
                 # 2. If it is a scanned PDF (no digital text found) and local OCR is enabled
                 if not pdf_text.strip() and settings.ENABLE_LOCAL_OCR:
-                    logger.info("No digital text found in PDF. Extracting embedded images for local EasyOCR fallback...")
-                    reader_easy = get_easyocr_reader()
-                    if reader_easy:
-                        for page_idx, page in enumerate(reader.pages):
-                            page_img_text = []
-                            for img_idx, image_obj in enumerate(page.images):
-                                try:
-                                    img = Image.open(io.BytesIO(image_obj.data))
-                                    # Skip small images like layout decorations, company icons, or bullet elements
-                                    if img.width < 150 or img.height < 150:
-                                        logger.info(f"Skipping tiny image {img_idx} ({img.width}x{img.height}) on page {page_idx}")
-                                        continue
-                                    results = reader_easy.readtext(img, detail=0)
-                                    if results:
-                                        page_img_text.extend(results)
-                                except Exception as img_err:
-                                    logger.warning(f"Failed to scan image {img_idx} on page {page_idx}: {str(img_err)}")
-                            if page_img_text:
-                                pdf_text += "\n".join(page_img_text) + "\n"
+                    logger.info("No digital text found in PDF. Rendering pages to images for local EasyOCR fallback...")
+                    try:
+                        import fitz  # PyMuPDF
+                        import io
+                        doc_fitz = fitz.open(file_path)
+                        reader_easy = get_easyocr_reader()
+                        
+                        if reader_easy:
+                            for page_idx in range(len(doc_fitz)):
+                                page = doc_fitz.load_page(page_idx)
+                                # Render page at 150 DPI (zoom=2.0) for optimal OCR quality
+                                zoom = 2.0
+                                mat = fitz.Matrix(zoom, zoom)
+                                pix = page.get_pixmap(matrix=mat)
+                                img_data = pix.tobytes("png")
+                                img = Image.open(io.BytesIO(img_data))
+                                
+                                results = reader_easy.readtext(img, detail=0)
+                                if results:
+                                    pdf_text += "\n".join(results) + "\n"
+                    except Exception as ocr_err:
+                        logger.error(f"PyMuPDF + EasyOCR page rendering fallback failed: {str(ocr_err)}")
 
                 if pdf_text.strip():
                     logger.info("Successfully extracted text from PDF layer.")
