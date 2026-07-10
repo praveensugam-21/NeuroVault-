@@ -647,10 +647,18 @@ Document OCR Text:
             ])
             if phone: fields["phone"] = phone
 
-            name = DocumentProcessor._rex(ocr_text, [
-                r"^([A-Z][a-z]+(?:\s[A-Z][a-z]+){1,2})$"
-            ])
-            if name: fields["name"] = name
+            # Heuristic name extraction: Check first 3 lines for alphabetic-only name-like patterns
+            name = None
+            lines = [l.strip() for l in ocr_text.split("\n") if l.strip()]
+            for line in lines[:3]:
+                clean_line = re.sub(r"\s+", " ", line).strip()
+                if (re.match(r"^[a-zA-Z\s\.\-\']{2,40}$", clean_line) 
+                        and not any(w in clean_line.lower() for w in ["email", "phone", "resume", "cv", "curriculum", "address", "contact", "profile"])):
+                    name = clean_line
+                    break
+            
+            if name: 
+                fields["name"] = name.strip()
 
         elif doc_type == "Offer Letter":
             company = DocumentProcessor._rex(ocr_text, [
@@ -930,6 +938,34 @@ Document OCR Text:
         )
         if id_val:
             parts.append(f"ID: {id_val}.")
+
+        # Contact Details (Resumes, general)
+        email = fields.get("email")
+        phone = fields.get("phone")
+        if email:
+            parts.append(f"Email: {email}.")
+        if phone:
+            parts.append(f"Phone: {phone}.")
+
+        # Academic Details
+        univ = fields.get("university") or fields.get("school_name")
+        deg = fields.get("degree")
+        if deg and univ:
+            parts.append(f"Degree: {deg} from {univ}.")
+        elif deg:
+            parts.append(f"Degree: {deg}.")
+        elif univ:
+            parts.append(f"Institution: {univ}.")
+
+        # Professional Details
+        comp = fields.get("company_name")
+        role = fields.get("role") or fields.get("designation")
+        if role and comp:
+            parts.append(f"Position: {role} at {comp}.")
+        elif role:
+            parts.append(f"Position: {role}.")
+        elif comp:
+            parts.append(f"Employer: {comp}.")
 
         if len(parts) == 1:
             parts.append("Limited text could be extracted — OCR quality may be low.")

@@ -20,47 +20,54 @@ ChromaDB is a database built specifically to store and index high-dimensional ve
 ## 2. Text Chunking & Metadata Strategy
 
 When a document is indexed:
-1. We construct a composite context text block:
-   ```text
-   Category: [Category]
-   Type: [Document Type]
-   Summary: [Summary Card text]
-   Content:
-   [Raw OCR text and stringified JSON payload]
-   ```
-2. We embed this block as a single document chunk.
-3. We associate metadata to filter queries:
-   - `user_id`: Crucial to isolate search results between users.
-   - `category`: To narrow searches to specific folders (e.g. only search Financial records).
-   - `document_type`: e.g. "PAN Card".
+1. **Recursive Text Chunking:**
+   The document's full parsed text is split into smaller, semantic chunks using a `RecursiveCharacterTextSplitter`.
+   - **Chunk Size:** Target of 700 characters (~150 tokens) per chunk.
+   - **Overlap:** 100 characters (~20 tokens) overlap to preserve semantic context across chunk borders.
+2. **Metadata Association:**
+   Each individual chunk is embedded and stored as a separate vector in the ChromaDB collection `iris_documents_chunks` with rich metadata:
+   - `chunk_id`: Unique identifier (`<document_id>_chunk_<index>`).
+   - `document_id`: Relates chunks back to the original document.
+   - `user_id`: Isolate search results between users.
+   - `chunk_index`: The sequence number of the chunk.
+   - `section`: Heuristic section identifier (e.g. "Skills", "Experience", "Education").
+   - `category` & `document_type`: For folder-level or document-type filtering.
 
 ---
 
-## 3. RAG Query Execution Flow
+## 3. RAG Query Execution Flow (Advanced Search Pipeline)
 
 ```
-User Query ────────────────────────┐
-                                   ▼
-                   Embed Query (384-dim vector)
-                                   │
-                                   ▼
-             Query ChromaDB with Metadata Filter (user_id)
-                                   │
-                                   ▼
-             Retrieve Top-3 Matching Document UUIDs
-                                   │
-                                   ▼
-             Load Full JSON Details from SQLite Database
-                                   │
-                                   ▼
-          Assemble System Context Prompt + Citations List
-                                   │
-                                   ▼
-                      Generate Cited Response
-               (via local Ollama or Local Rules Engine)
-                                   │
-                                   ▼
-                      Display Answer to User
+User Query ───────────────────────────────────┐
+                                               ▼
+                               Embed Query (384-dim vector)
+                                               │
+                                               ▼
+                         Query ChromaDB for Candidate Chunks (Top-25)
+                                               │
+                                               ▼
+                      Apply Local BM25 Keyword Matching (Hybrid Search)
+                                               │
+                                               ▼
+                         Rerank Candidates using Cross-Encoder Model
+                          (ms-marco-MiniLM-L-6-v2, optimized for CPU)
+                                               │
+                                               ▼
+                         Apply MMR (Maximum Marginal Relevance) Filter
+                            (Eliminates redundant/duplicated chunks)
+                                               │
+                                               ▼
+                         Merge diverse Chunks sorted by chunk_index
+                                               │
+                                               ▼
+                       Assemble Context Prompt + Chunk Citations
+                                               │
+                                               ▼
+                                    Generate Cited Response
+                            (via local Ollama or Local Rules Engine)
+                                               │
+                                               ▼
+                                    Display Answer to User
 ```
 
-This RAG loop ensures that the assistant answers questions using only verified documents in your vault, adding inline citations (e.g., *[Retrieved from PAN Card]*) for transparency.
+This chunk-level retrieval loop ensures the query assistant extracts specific relevant sections (e.g. only the *Skills* section of a Resume) instead of loading the entire document, resulting in a cleaner prompt and more accurate answers with section-specific citations.

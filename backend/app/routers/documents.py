@@ -10,6 +10,7 @@ from app.models.audit_log import AuditLog
 from app.schemas.document import DocumentResponse, DocumentBriefResponse
 from app.services.security import SecurityService
 from app.services.embedding_service import EmbeddingService
+from app.services.encryption_service import EncryptionService
 from app.pipeline.processing_queue import DocumentPipelineManager
 from app.config import settings
 from typing import List, Optional
@@ -413,5 +414,71 @@ def get_document_file(
         media_type=mime_type or "application/octet-stream",
         filename=filename
     )
+
+
+@router.post("/reindex", status_code=status.HTTP_200_OK)
+def trigger_reindex(
+    current_user: User = Depends(SecurityService.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Manually triggers full chunk-level re-indexing for all user documents.
+    Cleans up old document-level indices and builds semantic chunks in ChromaDB.
+    """
+    docs = db.query(Document).filter(
+        Document.user_id == current_user.id,
+        Document.status == "COMPLETE"
+    ).all()
+
+    success_count = 0
+    for doc in docs:
+        # Fetch file text content
+        # For simplicity, we can rebuild using the stored summary + OCR text from file
+        file_type = doc.file_type
+        ocr_text = ""
+        
+        # Load text from document pipeline if available
+        # Or fall back to doc summary & entities
+        # Since full_text is not stored in SQL, we can read the file if it exists, or run OCR again.
+        # But wait! A simpler, faster way is to fetch the physical file and re-extract text!
+        try:
+            if doc.file_path and os.path.exists(doc.file_path):
+                if file_type.upper() == "AUDIO":
+                    from app.services.voice_service import VoiceService
+                    ocr_text = VoiceService.transcribe_audio(doc.file_path)
+                else:
+                    from app.services.ocr_service import OCRService
+                    ocr_text = OCRService.extract_text_from_file(doc.file_path, file_type)
+            
+            # Decrypt extracted_json to get fields
+            decrypted_json_str = "{}"
+            if doc.extracted_json:
+                try:
+                    decrypted_json_str = EncryptionService.decrypt(doc.extracted_json)
+                except Exception:
+                    decrypted_json_str = "{}"
+            
+            # Index chunks
+            indexed = EmbeddingService.add_document_chunks(
+                document_id=doc.id,
+                user_id=current_user.id,
+                full_text=f"Summary: {doc.summary}\nContent:\n{ocr_text}\nMetadata details:\n{decrypted_json_str}",
+                category=doc.category,
+                doc_type=doc.document_type
+            )
+            if indexed:
+                success_count += 1
+        except Exception as e:
+            logger.error(f"Failed to re-index document {doc.id}: {e}")
+
+    # Audit log
+    audit = AuditLog(user_id=current_user.id, action="REINDEX_VAULT")
+    db.add(audit)
+    db.commit()
+
+    return {
+        "message": f"Successfully re-indexed {success_count} of {len(docs)} documents at the chunk level."
+    }
+
 
 

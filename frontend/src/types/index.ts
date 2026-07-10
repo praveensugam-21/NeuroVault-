@@ -32,6 +32,8 @@ export interface ChatCitation {
   category: string;
   snippet: string;
   similarity?: number;
+  section?: string;
+  chunk_index?: number;
 }
 
 export interface ChatResponse {

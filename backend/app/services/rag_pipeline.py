@@ -14,86 +14,45 @@ class RAGPipeline:
     @staticmethod
     def answer_query(db: Session, user_id: int, question: str, history: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
-        Retrieves relevant document fragments and answers the query.
+        Retrieves relevant document chunks and answers the query.
         Uses Ollama if available, otherwise falls back to a smart local rules reasoning engine.
         Ensures full privacy, absolute local execution, and handles multi-turn conversation context.
         """
         history = history or []
         
-        # Step 1: Multi-stage Retrieval
-        # Attempt semantic search in ChromaDB (top_k=8 for comprehensive answers)
-        search_hits = EmbeddingService.search(user_id=user_id, query=question, top_k=8)
+        # Step 1: Multi-stage Chunk Retrieval
+        # Query semantic chunks (top_k=6 diverse chunks selected via MMR and Cross-Encoder)
+        search_hits = EmbeddingService.search(user_id=user_id, query=question, top_k=6)
         
         citations = []
-        context_parts = []
-        retrieved_doc_ids = set()
+        doc_chunks = {}  # document_id -> {doc, hits}
         
-        # Helper to process document and add to context
-        def process_doc_for_context(doc, similarity_score: float):
-            if doc.is_locked:
-                return False
-                
-            # Decrypt extracted JSON safely
-            decrypted_json_str = "{}"
-            if doc.extracted_json:
-                try:
-                    decrypted_json_str = EncryptionService.decrypt(doc.extracted_json)
-                except Exception as e:
-                    logger.error(f"Decryption of document {doc.id} failed: {e}")
-                    decrypted_json_str = "{}"
-
-            # Parse extracted fields
-            try:
-                extracted_fields = json.loads(decrypted_json_str) if decrypted_json_str else {}
-            except Exception:
-                extracted_fields = {}
-
-            # Add to citations
-            snippet = doc.summary or (doc.name + " (" + (doc.document_type or "General") + ")")
-            citations.append({
-                "document_id": doc.id,
-                "document_name": doc.name,
-                "category": doc.category or "General",
-                "snippet": snippet[:300],
-                "similarity": similarity_score
-            })
-            
-            # Format fields for context
-            fields_formatted = []
-            for k, v in extracted_fields.items():
-                if isinstance(v, list):
-                    # handle nested objects or lists like subjects/marks
-                    v_str = ", ".join([str(item) for item in v])
-                    fields_formatted.append(f"{k}: [{v_str}]")
-                elif isinstance(v, dict):
-                    v_str = ", ".join([f"{nk}={nv}" for nk, nv in v.items()])
-                    fields_formatted.append(f"{k}: {{{v_str}}}")
-                else:
-                    fields_formatted.append(f"{k}: {v}")
-            
-            fields_str = "\n  - ".join(fields_formatted) if fields_formatted else "None"
-            
-            context_parts.append(
-                f"Document Name: {doc.name}\n"
-                f"Document ID: {doc.id}\n"
-                f"Category: {doc.category or 'General'}\n"
-                f"Type: {doc.document_type or 'Unknown'}\n"
-                f"Summary: {doc.summary or 'N/A'}\n"
-                f"Extracted Metadata Fields:\n  - {fields_str}"
-            )
-            retrieved_doc_ids.add(doc.id)
-            return True
-
-        # Process vector search hits
+        # Gather matching chunks and group by document
         for hit in search_hits:
             doc_id = hit["document_id"]
             doc = db.query(Document).filter(Document.id == doc_id, Document.user_id == user_id).first()
-            if doc and doc.status == "COMPLETE":
-                process_doc_for_context(doc, hit.get("similarity", 0.8))
+            if doc and doc.status == "COMPLETE" and not doc.is_locked:
+                if doc_id not in doc_chunks:
+                    doc_chunks[doc_id] = {
+                        "doc": doc,
+                        "hits": []
+                    }
+                doc_chunks[doc_id]["hits"].append(hit)
+                
+                # Add chunk metadata to citations
+                citations.append({
+                    "document_id": doc.id,
+                    "document_name": doc.name,
+                    "category": doc.category or "General",
+                    "snippet": hit["text"][:300],
+                    "similarity": hit.get("similarity", 0.8),
+                    "section": hit["metadata"].get("section", "General"),
+                    "chunk_index": hit["metadata"].get("chunk_index", 0)
+                })
 
-        # SQL keyword-based search fallback if no hits or very low similarity hits
-        if not context_parts:
-            logger.info("Semantic search yielded no results. Falling back to SQL keyword search.")
+        # SQL keyword search fallback if semantic search returns absolutely nothing
+        if not doc_chunks:
+            logger.info("Semantic search yielded no chunk results. Falling back to SQL keyword search.")
             q_terms = [term.strip().lower() for term in re.split(r'\s+', question) if len(term.strip()) > 2]
             if q_terms:
                 sql_docs = db.query(Document).filter(
@@ -102,16 +61,35 @@ class RAGPipeline:
                 ).all()
                 
                 for doc in sql_docs:
-                    if doc.id in retrieved_doc_ids:
+                    if doc.is_locked:
                         continue
                     
-                    # Compute a simple keyword match score
+                    # Compute keyword match score
                     doc_text = f"{doc.name} {doc.category or ''} {doc.document_type or ''} {doc.summary or ''}".lower()
                     matches = sum(1 for term in q_terms if term in doc_text)
                     if matches > 0:
-                        process_doc_for_context(doc, 0.5 + (0.05 * matches))
+                        snippet = doc.summary or doc.name
+                        similarity_score = 0.5 + (0.05 * matches)
+                        
+                        citations.append({
+                            "document_id": doc.id,
+                            "document_name": doc.name,
+                            "category": doc.category or "General",
+                            "snippet": snippet[:300],
+                            "similarity": similarity_score,
+                            "section": "General",
+                            "chunk_index": 0
+                        })
+                        
+                        doc_chunks[doc.id] = {
+                            "doc": doc,
+                            "hits": [{
+                                "text": snippet,
+                                "metadata": {"section": "General", "chunk_index": 0}
+                            }]
+                        }
 
-        # Check if the user is asking a conversational question when the vault is empty
+        # Check if vault is empty
         all_completed_docs = db.query(Document).filter(
             Document.user_id == user_id, 
             Document.status == "COMPLETE"
@@ -119,13 +97,55 @@ class RAGPipeline:
 
         if not all_completed_docs:
             return {
-                "answer": "🔒 **Welcome to your private IRIS Vault!**\n\nI couldn't find any documents in your vault yet. Please upload files (such as your **Aadhaar Card, PAN Card, Driving Licence, Marksheets, Resume, or Bank Statements**) using the Upload page.\n\nOnce uploaded, I will automatically classify them, extract key details, and let you ask questions about them securely and offline.",
+                "answer": "🔒 **Welcome to your private IRIS Vault!**\n\nI couldn't find any documents in your vault yet. Please upload files (such as your **Aadhaar Card, PAN Card, Driving Licence, Marksheets, Resume, or Bank Statements**) using the Upload page.\n\nOnce uploaded, I will automatically classify them, split them into semantic chunks, and let you ask questions about them securely and offline.",
                 "citations": [],
                 "retrieval_method": "empty_vault"
             }
 
+        # Build context from merged chunks (grouped by document and sorted by chunk index)
+        context_parts = []
+        for doc_id, data in doc_chunks.items():
+            doc = data["doc"]
+            hits = data["hits"]
+            
+            # Sort chunks to ensure reading continuity
+            hits.sort(key=lambda x: x["metadata"].get("chunk_index", 0))
+            
+            merged_chunks_text = "\n\n".join([
+                f"[Section: {hit['metadata'].get('section', 'General')} (Chunk {hit['metadata'].get('chunk_index', 0)})]\n{hit['text']}"
+                for hit in hits
+            ])
+
+            # Decrypt fields safely
+            decrypted_json_str = "{}"
+            if doc.extracted_json:
+                try:
+                    decrypted_json_str = EncryptionService.decrypt(doc.extracted_json)
+                except Exception as e:
+                    logger.error(f"Decryption of document {doc.id} failed: {e}")
+
+            try:
+                extracted_fields = json.loads(decrypted_json_str) if decrypted_json_str else {}
+            except Exception:
+                extracted_fields = {}
+
+            fields_str = ", ".join([f"{k}: {v}" for k, v in extracted_fields.items() if not isinstance(v, (dict, list))])
+
+            context_parts.append(
+                f"Document: {doc.name}\n"
+                f"Type: {doc.document_type or 'Unknown'}\n"
+                f"Category: {doc.category or 'General'}\n"
+                f"Key Metadata: {fields_str or 'None'}\n"
+                f"Relevant Text Passages:\n{merged_chunks_text}"
+            )
+
         context_text = "\n\n---\n\n".join(context_parts)
-        retrieval_method = "vector" if search_hits else "sql_fallback"
+        retrieval_method = "vector_chunks" if search_hits else "sql_fallback"
+
+        # Log query context details for debugging/observability
+        logger.info(f"RAG Query: '{question}'")
+        logger.info(f"Retrieved {len(citations)} chunk citations.")
+        logger.debug(f"Final Prompt Context:\n{context_text}")
 
         # Step 2: Query LLM or fall back to Smart Local Rules Engine
         from app.services.ollama_service import OllamaService
@@ -147,17 +167,17 @@ class RAGPipeline:
         history_context = ""
         if history:
             history_context = "Previous Conversation History:\n"
-            for msg in history[-5:]: # last 5 turns
+            for msg in history[-5:]:
                 role = "User" if msg.get("role") == "user" else "Assistant"
                 history_context += f"{role}: {msg.get('content')}\n"
             history_context += "\n"
 
         prompt = f"""
 You are the IRIS AI Memory Assistant, a secure personal document intelligence assistant.
-Answer the user's question using ONLY the retrieved document contexts below. 
+Answer the user's question using ONLY the retrieved document contexts below.
 
 Guidelines:
-1. Cite the document names when reporting facts (e.g. "According to your Aadhaar Card, your address is...").
+1. Cite the document names and specific sections when reporting facts (e.g. "According to your Aadhaar Card, your address is..." or "Under the Experience section of your Resume, you worked at...").
 2. Use markdown formatting (bold, tables, bullet points) to present information clearly.
 3. If the information is not present in the contexts, state clearly that you cannot find it in the vault. Do NOT make up information.
 4. Maintain context from previous conversation history if provided.
@@ -177,7 +197,7 @@ Provide a professional, formatted, and cited response:
         return {
             "answer": answer,
             "citations": citations,
-            "retrieval_method": "ollama"
+            "retrieval_method": "ollama_chunks"
         }
 
     @staticmethod
@@ -242,7 +262,7 @@ Provide a professional, formatted, and cited response:
                 
             return {
                 "answer": markdown,
-                "citations": [{"document_id": d["doc"].id, "document_name": d["doc"].name, "category": d["doc"].category or "General", "snippet": d["doc"].summary or "No summary available"} for d in docs_metadata[:5]],
+                "citations": citations[:5] if citations else [{"document_id": d["doc"].id, "document_name": d["doc"].name, "category": d["doc"].category or "General", "snippet": d["doc"].summary or "No summary available"} for d in docs_metadata[:5]],
                 "retrieval_method": "local_rules_summary"
             }
 
@@ -267,7 +287,7 @@ Provide a professional, formatted, and cited response:
                         if father: ans += f"- **Father's Name:** {father}\n"
                         return {
                             "answer": ans,
-                            "citations": [{"document_id": doc.id, "document_name": doc.name, "category": doc.category or "General", "snippet": doc.summary or f"PAN details for {name}"}],
+                            "citations": citations[:1] if citations else [{"document_id": doc.id, "document_name": doc.name, "category": doc.category or "General", "snippet": doc.summary or f"PAN details for {name}"}],
                             "retrieval_method": "local_rules_pan"
                         }
 
@@ -293,7 +313,7 @@ Provide a professional, formatted, and cited response:
                         if addr: ans += f"- **Address:** {addr}\n"
                         return {
                             "answer": ans,
-                            "citations": [{"document_id": doc.id, "document_name": doc.name, "category": doc.category or "General", "snippet": doc.summary or f"Aadhaar card for {name}"}],
+                            "citations": citations[:1] if citations else [{"document_id": doc.id, "document_name": doc.name, "category": doc.category or "General", "snippet": doc.summary or f"Aadhaar card for {name}"}],
                             "retrieval_method": "local_rules_aadhaar"
                         }
 
@@ -317,7 +337,7 @@ Provide a professional, formatted, and cited response:
                     if classes: ans += f"- **Authorized Vehicle Classes:** {classes}\n"
                     return {
                         "answer": ans,
-                        "citations": [{"document_id": doc.id, "document_name": doc.name, "category": doc.category or "General", "snippet": doc.summary or "DL Details"}],
+                        "citations": citations[:1] if citations else [{"document_id": doc.id, "document_name": doc.name, "category": doc.category or "General", "snippet": doc.summary or "DL Details"}],
                         "retrieval_method": "local_rules_dl"
                     }
 
@@ -351,7 +371,7 @@ Provide a professional, formatted, and cited response:
                                 ans += f"| {sub} | - | - |\n"
                     return {
                         "answer": ans,
-                        "citations": [{"document_id": doc.id, "document_name": doc.name, "category": doc.category or "General", "snippet": doc.summary or "Academic records detail"}],
+                        "citations": citations[:1] if citations else [{"document_id": doc.id, "document_name": doc.name, "category": doc.category or "General", "snippet": doc.summary or "Academic records detail"}],
                         "retrieval_method": "local_rules_academic"
                     }
 
@@ -373,7 +393,7 @@ Provide a professional, formatted, and cited response:
                     if joining: ans += f"- **Joining Date:** {joining}\n"
                     return {
                         "answer": ans,
-                        "citations": [{"document_id": doc.id, "document_name": doc.name, "category": doc.category or "General", "snippet": doc.summary or "Professional employment records"}],
+                        "citations": citations[:1] if citations else [{"document_id": doc.id, "document_name": doc.name, "category": doc.category or "General", "snippet": doc.summary or "Professional employment records"}],
                         "retrieval_method": "local_rules_professional"
                     }
 
@@ -390,20 +410,20 @@ Provide a professional, formatted, and cited response:
                 ans = "📅 **Upcoming Expiries & Renewals:**\n\n" + "\n".join(expiries)
                 return {
                     "answer": ans,
-                    "citations": [{"document_id": d["doc"].id, "document_name": d["doc"].name, "category": d["doc"].category or "General", "snippet": d["doc"].summary or ""} for d in docs_metadata if d["fields"].get("expiry_date")][:4],
+                    "citations": citations if citations else [{"document_id": d["doc"].id, "document_name": d["doc"].name, "category": d["doc"].category or "General", "snippet": d["doc"].summary or ""} for d in docs_metadata if d["fields"].get("expiry_date")][:4],
                     "retrieval_method": "local_rules_expiry"
                 }
 
         # --- RULE 8: Default Fallback (General RAG Context Synthesis) ---
         if citations:
-            ans = "🔍 **I searched your vault and found the following relevant information:**\n\n"
+            ans = "🔍 **I searched your vault and found the following relevant information chunks:**\n\n"
             for c in citations:
-                ans += f"📄 **From {c['document_name']}** ({c['category']}):\n"
+                ans += f"📄 **From {c['document_name']}** (Section: {c.get('section', 'General')}, Similarity: {int(c.get('similarity', 0.8)*100)}%):\n"
                 ans += f"> {c['snippet']}\n\n"
             return {
                 "answer": ans,
                 "citations": citations,
-                "retrieval_method": "local_rules_fallback"
+                "retrieval_method": "local_rules_chunks_fallback"
             }
 
         # --- RULE 9: Completely Unmatched ---

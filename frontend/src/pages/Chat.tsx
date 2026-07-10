@@ -265,9 +265,16 @@ export const Chat: React.FC = () => {
                     </span>
                   )}
                 </div>
-                <span className="nv-badge nv-badge-neutral text-[9px] mt-1 inline-block bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-350">
-                  {c.category}
-                </span>
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  <span className="text-[9px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-350 font-medium">
+                    {c.category}
+                  </span>
+                  {c.section && (
+                    <span className="text-[9px] font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400 border border-blue-100 dark:border-blue-900/30 px-2 py-0.5 rounded">
+                      Section: {c.section}
+                    </span>
+                  )}
+                </div>
                 <p className="text-[10px] text-[#6B7280] dark:text-slate-400 leading-relaxed bg-[#F8FAFC] dark:bg-slate-950 border border-[#E5E7EB] dark:border-slate-800 p-2.5 rounded font-mono break-words">
                   "{c.snippet}"
                 </p>

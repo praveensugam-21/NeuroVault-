@@ -57,6 +57,76 @@ app.include_router(dashboard.router)
 app.include_router(digest.router)
 
 
+def run_auto_migration():
+    import time
+    import logging
+    from app.database import SessionLocal
+    from app.models.document import Document
+    from app.services.embedding_service import get_chroma_collection, EmbeddingService
+    from app.services.encryption_service import EncryptionService
+    
+    # Wait a few seconds for startup components to initialize
+    time.sleep(5)
+    logger = logging.getLogger("iris.migration")
+    logger.info("[Migration] Checking RAG vector index formatting...")
+    
+    db = SessionLocal()
+    try:
+        docs = db.query(Document).filter(Document.status == "COMPLETE").all()
+        collection = get_chroma_collection()
+        if collection is None:
+            logger.warning("[Migration] ChromaDB unavailable. Skipping migration check.")
+            return
+
+        reindexed_count = 0
+        for doc in docs:
+            # Query if doc is indexed at the chunk level
+            try:
+                res = collection.get(where={"document_id": doc.id})
+                has_chunks = len(res.get("ids", [])) > 0
+            except Exception:
+                has_chunks = False
+
+            if not has_chunks:
+                logger.info(f"[Migration] Legacy index detected for '{doc.name}' (ID: {doc.id}). Rebuilding...")
+                ocr_text = ""
+                try:
+                    if doc.file_path and os.path.exists(doc.file_path):
+                        if doc.file_type.upper() == "AUDIO":
+                            from app.services.voice_service import VoiceService
+                            ocr_text = VoiceService.transcribe_audio(doc.file_path)
+                        else:
+                            from app.services.ocr_service import OCRService
+                            ocr_text = OCRService.extract_text_from_file(doc.file_path, doc.file_type)
+
+                    decrypted_json_str = "{}"
+                    if doc.extracted_json:
+                        try:
+                            decrypted_json_str = EncryptionService.decrypt(doc.extracted_json)
+                        except Exception:
+                            pass
+
+                    # Build chunk-level indexing
+                    indexed = EmbeddingService.add_document_chunks(
+                        document_id=doc.id,
+                        user_id=doc.user_id,
+                        full_text=f"Summary: {doc.summary}\nContent:\n{ocr_text}\nMetadata details:\n{decrypted_json_str}",
+                        category=doc.category,
+                        doc_type=doc.document_type
+                    )
+                    if indexed:
+                        reindexed_count += 1
+                except Exception as e:
+                    logger.error(f"[Migration] Auto-reindexing failed for {doc.id}: {e}")
+
+        if reindexed_count > 0:
+            logger.info(f"[Migration] Finished! Re-indexed {reindexed_count} documents to semantic chunk vectors.")
+    except Exception as e:
+        logger.error(f"[Migration] Verification run failed: {e}")
+    finally:
+        db.close()
+
+
 @app.on_event("startup")
 def startup_event():
     import threading
@@ -72,6 +142,9 @@ def startup_event():
     # Pre-load SentenceTransformer in a background thread to prevent first-upload index lag
     from app.services.embedding_service import get_embedding_model
     threading.Thread(target=get_embedding_model, daemon=True).start()
+    
+    # Run auto-migration in a daemon thread
+    threading.Thread(target=run_auto_migration, daemon=True).start()
 
 
 @app.get("/")

@@ -78,14 +78,13 @@ class DocumentPipelineManager:
             entities_dict = result.get("entities", {"PERSON": [], "ORG": [], "DATE": [], "ID_NUMBER": [], "GPE": []})
             fields_json = json.dumps(extracted_fields)
 
-            # ─ Step 4: Vector Embedding (ChromaDB) ───────────────────────────
-            logger.info("[Pipeline] Generating vector embeddings...")
+            # ─ Step 4: Vector Embedding (ChromaDB Chunks) ───────────────────
+            logger.info("[Pipeline] Generating semantic vector chunk embeddings...")
             try:
-                EmbeddingService.add_document(
+                EmbeddingService.add_document_chunks(
                     document_id=document_id,
                     user_id=user_id,
-                    summary=summary,
-                    full_text=f"{ocr_text}\n{fields_json}",
+                    full_text=f"Summary: {summary}\nContent:\n{ocr_text}\nMetadata details:\n{fields_json}",
                     category=category,
                     doc_type=doc_type
                 )
