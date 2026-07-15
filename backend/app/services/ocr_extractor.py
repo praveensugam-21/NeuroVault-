@@ -430,6 +430,9 @@ class OCRExtractor:
           - driving_license_number -> dl_number  (legacy RAG pipeline key)
           - mobile_number          -> phone       (legacy RAG pipeline key)
           - address sub-fields are stored individually AND combined into address string
+
+        Final pass: PostOCRCorrector fixes geographic OCR errors
+          (e.g. "Jamil Nadu" → "Tamil Nadu" via pincode + fuzzy matching)
         """
         fields: Dict[str, Any] = {}
 
@@ -482,5 +485,14 @@ class OCRExtractor:
             joined = ", ".join(p for p in addr_parts if p)
             if joined:
                 fields["address"] = joined
+
+        # ── Final Pass: Post-OCR Geographic Correction ────────────────────────
+        # Fixes errors like "Jamil Nadu" → "Tamil Nadu" using pincode lookup
+        # and fuzzy matching. Zero external dependencies (uses difflib stdlib).
+        try:
+            from app.services.post_ocr_corrector import PostOCRCorrector
+            fields = PostOCRCorrector.correct_fields(fields)
+        except Exception as e:
+            logger.warning(f"PostOCRCorrector failed (non-critical): {e}")
 
         return fields
