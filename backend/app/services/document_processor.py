@@ -32,6 +32,12 @@ def get_spacy_nlp():
 MIN_CONFIDENCE_THRESHOLD = 0.55  # Minimum score to classify as a known type
 
 
+# Identity document types that benefit from the expert OCR extractor
+_IDENTITY_DOC_TYPES = {
+    "Aadhaar Card", "PAN Card", "Driving Licence", "Passport", "Voter ID"
+}
+
+
 class DocumentProcessor:
 
     @staticmethod
@@ -43,21 +49,15 @@ class DocumentProcessor:
     ) -> Dict[str, Any]:
         """
         Main entry point: classifies the document and extracts fields.
-        Falls back to Ollama if available, otherwise uses rule-based pipeline.
-        Ollama integration is preserved but currently disabled.
+
+        Pipeline:
+          1. Classify document type using rule-based confidence scoring.
+          2. For identity documents: run the expert OCRExtractor prompt
+             (Ollama -> Gemini -> empty fallback) to extract precise PII fields.
+          3. Merge expert-extracted fields over regex-extracted fields.
+          4. For non-identity documents: use the full regex extraction pipeline.
         """
         filename = (original_name or os.path.basename(file_path)).lower()
-
-        # Attempt Ollama-based processing (disabled by default, architecture preserved)
-        try:
-            result = DocumentProcessor._process_with_ollama(ocr_text)
-            if result.get("confidence_score", 0) >= MIN_CONFIDENCE_THRESHOLD and result.get("document_type"):
-                result = DocumentProcessor._validate_ollama_result(result, ocr_text, filename)
-                return result
-            raise RuntimeError(f"Ollama returned low-confidence result. Falling back.")
-        except Exception as e:
-            logger.debug(f"Ollama unavailable or low-confidence, using rule-based pipeline: {e}")
-
         return DocumentProcessor._process_with_rules(filename, ocr_text)
 
     # ── Ollama Integration (preserved, disabled) ─────────────────────────────
@@ -482,87 +482,123 @@ Document OCR Text:
         ocr_upper: str
     ) -> Dict[str, Any]:
         """
-        Extract fields using regex patterns. Returns only fields actually found.
-        Never returns hardcoded fake values.
+        Extract fields from document text.
+
+        For identity documents (Aadhaar, PAN, DL, Passport, Voter ID):
+          - Runs the expert OCRExtractor prompt first (LLM-based precision extraction).
+          - Falls back to / merges with regex patterns for any null fields.
+
+        For all other document types:
+          - Uses the regex-based pipeline only.
+
+        Never returns hardcoded or invented values.
         """
         fields: Dict[str, Any] = {}
         if not ocr_text:
             return fields
 
+        # ── Expert extraction for identity documents ──────────────────────────
+        if doc_type in _IDENTITY_DOC_TYPES:
+            try:
+                from app.services.ocr_extractor import OCRExtractor
+                logger.info(f"Running expert OCR extractor for '{doc_type}'...")
+                expert_raw = OCRExtractor.extract(ocr_text)
+                expert_fields = OCRExtractor.to_legacy_fields(expert_raw)
+                # Only keep non-null expert fields
+                fields.update({k: v for k, v in expert_fields.items() if v is not None})
+                logger.info(f"Expert OCR extractor returned {len(fields)} fields for '{doc_type}'.")
+            except Exception as e:
+                logger.warning(f"Expert OCR extractor failed for '{doc_type}': {e}. Falling back to regex.")
+
         if doc_type == "Aadhaar Card":
-            name = DocumentProcessor._rex(ocr_text, [
-                r"(?:Name|NAME)[:\s]+([A-Za-z][A-Za-z\s]{2,35})(?=\n|\r|DOB|Gender|Aadhaar|$)",
-                r"^([A-Z][a-z]+(?:\s[A-Z][a-z]+){1,3})$"
-            ])
-            if name: fields["name"] = name
+            # Regex fills any field the expert extractor left as null
+            if not fields.get("name"):
+                name = DocumentProcessor._rex(ocr_text, [
+                    r"(?:Name|NAME)[:\s]+([A-Za-z][A-Za-z\s]{2,35})(?=\n|\r|DOB|Gender|Aadhaar|$)",
+                    r"^([A-Z][a-z]+(?:\s[A-Z][a-z]+){1,3})$"
+                ])
+                if name: fields["name"] = name
 
-            dob = DocumentProcessor._rex(ocr_text, [
-                r"(?:DOB|Date of Birth|Birth)[:\s]+([\d]{1,2}[/-][\d]{1,2}[/-][\d]{2,4})",
-                r"(?:DOB|Birth)[:\s]+([\d]{4}-[\d]{2}-[\d]{2})"
-            ])
-            if dob: fields["dob"] = DocumentProcessor._to_iso_date(dob)
+            if not fields.get("dob"):
+                dob = DocumentProcessor._rex(ocr_text, [
+                    r"(?:DOB|Date of Birth|Birth)[:\s]+([\d]{1,2}[/-][\d]{1,2}[/-][\d]{2,4})",
+                    r"(?:DOB|Birth)[:\s]+([\d]{4}-[\d]{2}-[\d]{2})"
+                ])
+                if dob: fields["dob"] = DocumentProcessor._to_iso_date(dob)
 
-            # Aadhaar: look for 4-4-4 spaced pattern OR 12 consecutive digits in Aadhaar context
-            aadhaar_no = DocumentProcessor._rex(ocr_text, [
-                r"(\d{4}\s\d{4}\s\d{4})",
-                r"(?:Aadhaar|No)[:\s]*(\d{12})"
-            ])
-            if aadhaar_no: fields["aadhaar_number"] = aadhaar_no.replace(" ", "")
+            if not fields.get("aadhaar_number"):
+                aadhaar_no = DocumentProcessor._rex(ocr_text, [
+                    r"(\d{4}\s\d{4}\s\d{4})",
+                    r"(?:Aadhaar|No)[:\s]*(\d{12})"
+                ])
+                if aadhaar_no:
+                    digits = aadhaar_no.replace(" ", "")
+                    fields["aadhaar_number"] = f"{digits[:4]} {digits[4:8]} {digits[8:]}"
 
-            gender = None
-            if re.search(r"\bfemale\b", ocr_lower): gender = "Female"
-            elif re.search(r"\bmale\b", ocr_lower): gender = "Male"
-            elif re.search(r"\btransgender\b", ocr_lower): gender = "Other"
-            if gender: fields["gender"] = gender
+            if not fields.get("gender"):
+                if re.search(r"\bfemale\b", ocr_lower): fields["gender"] = "Female"
+                elif re.search(r"\bmale\b", ocr_lower): fields["gender"] = "Male"
+                elif re.search(r"\btransgender\b", ocr_lower): fields["gender"] = "Transgender"
 
-            addr = DocumentProcessor._rex(ocr_text, [
-                r"(?:Address|ADDR)[:\s]+(.{10,120})(?=\n\n|Aadhaar|$)",
-            ])
-            if addr: fields["address"] = addr.strip()
+            if not fields.get("address"):
+                addr = DocumentProcessor._rex(ocr_text, [
+                    r"(?:Address|ADDR)[:\s]+(.{10,120})(?=\n\n|Aadhaar|$)",
+                ])
+                if addr: fields["address"] = addr.strip()
 
         elif doc_type == "PAN Card":
-            pan_no = DocumentProcessor._rex(ocr_upper, [r"\b([A-Z]{5}\d{4}[A-Z])\b"])
-            if pan_no: fields["pan_number"] = pan_no
+            if not fields.get("pan_number"):
+                pan_no = DocumentProcessor._rex(ocr_upper, [r"\b([A-Z]{5}\d{4}[A-Z])\b"])
+                if pan_no: fields["pan_number"] = pan_no
 
-            name = DocumentProcessor._rex(ocr_text, [
-                r"(?:Name|NAME)[:\s]+([A-Za-z][A-Za-z\s]{2,40})(?=\n|Father|DOB|$)",
-            ])
-            if name: fields["name"] = name.strip()
+            if not fields.get("name"):
+                name = DocumentProcessor._rex(ocr_text, [
+                    r"(?:Name|NAME)[:\s]+([A-Za-z][A-Za-z\s]{2,40})(?=\n|Father|DOB|$)",
+                ])
+                if name: fields["name"] = name.strip()
 
-            father = DocumentProcessor._rex(ocr_text, [
-                r"(?:Father|Father'?s Name|FATHER)[:\s]+([A-Za-z][A-Za-z\s]{2,40})(?=\n|DOB|PAN|$)",
-            ])
-            if father: fields["father_name"] = father.strip()
+            if not fields.get("father_name"):
+                father = DocumentProcessor._rex(ocr_text, [
+                    r"(?:Father|Father'?s Name|FATHER)[:\s]+([A-Za-z][A-Za-z\s]{2,40})(?=\n|DOB|PAN|$)",
+                ])
+                if father: fields["father_name"] = father.strip()
 
-            dob = DocumentProcessor._rex(ocr_text, [
-                r"(?:DOB|Date of Birth)[:\s]+([\d]{1,2}[/-][\d]{1,2}[/-][\d]{2,4})",
-            ])
-            if dob: fields["dob"] = DocumentProcessor._to_iso_date(dob)
+            if not fields.get("dob"):
+                dob = DocumentProcessor._rex(ocr_text, [
+                    r"(?:DOB|Date of Birth)[:\s]+([\d]{1,2}[/-][\d]{1,2}[/-][\d]{2,4})",
+                ])
+                if dob: fields["dob"] = DocumentProcessor._to_iso_date(dob)
 
         elif doc_type == "Driving Licence":
-            dl_no = DocumentProcessor._rex(ocr_text, [
-                r"(?:DL No|DL Number|Licence No|Licence Number)[:\s]+([A-Z]{2}\d{2}[\s-]?\d{11,13})",
-                r"([A-Z]{2}\d{13})"
-            ])
-            if dl_no: fields["dl_number"] = dl_no.replace(" ", "").replace("-", "")
+            if not fields.get("dl_number"):
+                dl_no = DocumentProcessor._rex(ocr_text, [
+                    r"(?:DL No|DL Number|Licence No|Licence Number)[:\s]+([A-Z]{2}\d{2}[\s-]?\d{11,13})",
+                    r"([A-Z]{2}\d{13})"
+                ])
+                if dl_no: fields["dl_number"] = dl_no.replace(" ", "").replace("-", "")
 
-            name = DocumentProcessor._rex(ocr_text, [
-                r"(?:Name|NAME)[:\s]+([A-Za-z][A-Za-z\s]{2,40})(?=\n|DOB|Expiry|DL|$)",
-            ])
-            if name: fields["name"] = name.strip()
+            if not fields.get("name"):
+                name = DocumentProcessor._rex(ocr_text, [
+                    r"(?:Name|NAME)[:\s]+([A-Za-z][A-Za-z\s]{2,40})(?=\n|DOB|Expiry|DL|$)",
+                ])
+                if name: fields["name"] = name.strip()
 
-            dob = DocumentProcessor._rex(ocr_text, [
-                r"(?:DOB|Date of Birth)[:\s]+([\d]{1,2}[/-][\d]{1,2}[/-][\d]{2,4})",
-            ])
-            if dob: fields["dob"] = DocumentProcessor._to_iso_date(dob)
+            if not fields.get("dob"):
+                dob = DocumentProcessor._rex(ocr_text, [
+                    r"(?:DOB|Date of Birth)[:\s]+([\d]{1,2}[/-][\d]{1,2}[/-][\d]{2,4})",
+                ])
+                if dob: fields["dob"] = DocumentProcessor._to_iso_date(dob)
 
-            expiry = DocumentProcessor._rex(ocr_text, [
-                r"(?:Validity|Valid Till|Expiry Date|Expires?)[:\s]+([\d]{1,2}[/-][\d]{1,2}[/-][\d]{2,4})",
-            ])
-            if expiry: fields["expiry_date"] = DocumentProcessor._to_iso_date(expiry)
+            if not fields.get("expiry_date"):
+                expiry = DocumentProcessor._rex(ocr_text, [
+                    r"(?:Validity|Valid Till|Expiry Date|Expires?)[:\s]+([\d]{1,2}[/-][\d]{1,2}[/-][\d]{2,4})",
+                ])
+                if expiry: fields["expiry_date"] = DocumentProcessor._to_iso_date(expiry)
 
             classes = re.findall(r"\b(MCWG|LMV|HGMV|HPMV|MGV|PSV|TC|TRANS)\b", ocr_upper)
-            if classes: fields["vehicle_classes"] = list(set(classes))
+            if classes and not fields.get("vehicle_classes"):
+                fields["vehicle_classes"] = list(set(classes))
+
 
         elif doc_type in ("Class 10 Marksheet", "Class 12 Marksheet"):
             student_name = DocumentProcessor._rex(ocr_text, [
