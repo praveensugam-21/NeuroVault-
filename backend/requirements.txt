@@ -25,6 +25,6 @@ alembic
 argon2-cffi
 # AES-256 field-level encryption
 cryptography
-# Google Gemini SDK
-google-generativeai
+# Google Gemini SDK (new official SDK — replaces deprecated google-generativeai)
+google-genai
 pymupdf

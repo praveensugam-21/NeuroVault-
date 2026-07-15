@@ -1,6 +1,14 @@
-import json
 from app.services.rag_pipeline import RAGPipeline
-from app.database import SessionLocal
+from app.database import SessionLocal, Base, engine
+from app.models import User, Document, DocumentTag, Entity, GraphEdge, AuditLog
+import sys
+
+# Reconfigure stdout to support unicode/emojis in Windows console
+if sys.platform.startswith('win'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
+# Create SQLite tables if they do not exist
+Base.metadata.create_all(bind=engine)
 
 def test_query():
     db = SessionLocal()
@@ -17,7 +25,7 @@ def test_query():
         )
         
         print("\n============================================================")
-        print("🤖 OLLAMA CHATGPT-LIKE RESPONSE:")
+        print("=== AI CHAT RESPONSE ===")
         print("============================================================\n")
         print(result.get("answer"))
         print("\n" + "=" * 60)

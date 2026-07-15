@@ -166,8 +166,8 @@ class EmbeddingService:
             except Exception:
                 pass
 
-            # Chunk the document text recursively (500-800 character chunks)
-            splitter = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=100)
+            # Chunk the document text recursively (1200 character chunks for improved context retention)
+            splitter = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=200)
             raw_chunks = splitter.split_text(full_text)
             
             if not raw_chunks:
