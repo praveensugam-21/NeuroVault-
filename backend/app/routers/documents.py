@@ -450,13 +450,9 @@ def trigger_reindex(
                     from app.services.ocr_service import OCRService
                     ocr_text = OCRService.extract_text_from_file(doc.file_path, file_type)
             
-            # Decrypt extracted_json to get fields
-            decrypted_json_str = "{}"
-            if doc.extracted_json:
-                try:
-                    decrypted_json_str = EncryptionService.decrypt(doc.extracted_json)
-                except Exception:
-                    decrypted_json_str = "{}"
+            import json
+            fields = doc.get_extracted_fields()
+            decrypted_json_str = json.dumps(fields) if fields else "{}"
             
             # Index chunks
             indexed = EmbeddingService.add_document_chunks(
@@ -481,4 +477,89 @@ def trigger_reindex(
     }
 
 
+@router.post("/{id}/reextract", status_code=status.HTTP_200_OK)
+def reextract_document_fields(
+    id: str,
+    current_user: User = Depends(SecurityService.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Re-runs the full LLM field extraction pipeline on an existing document.
 
+    Use this when a document was originally uploaded without a working LLM (Gemini
+    was not configured), resulting in garbled OCR names or incorrect state values.
+
+    Pipeline:
+      1. Re-reads the physical file from disk.
+      2. Re-runs OCR text extraction.
+      3. Sends raw OCR text to OCRExtractor (Gemini 2.5 Flash) for precision field extraction.
+      4. Applies PostOCRCorrector geographic passes (pincode → state, fuzzy match).
+      5. Saves corrected extracted_json back to the database.
+    """
+    doc = db.query(Document).filter(
+        Document.id == id,
+        Document.user_id == current_user.id
+    ).first()
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    if doc.status != "COMPLETE":
+        raise HTTPException(status_code=400, detail="Document must be in COMPLETE status to re-extract.")
+
+    if not doc.file_path or not os.path.exists(doc.file_path):
+        raise HTTPException(status_code=404, detail="Source file not found on disk. Cannot re-extract.")
+
+    try:
+        import json as _json
+        from app.services.ocr_service import OCRService
+        from app.services.ocr_extractor import OCRExtractor
+        from app.services.post_ocr_corrector import PostOCRCorrector
+
+        logger.info(f"Re-extraction started for document '{doc.name}' ({doc.id})")
+
+        # Step 1: Re-read raw OCR text from the physical file
+        ocr_text = OCRService.extract_text_from_file(doc.file_path, doc.file_type)
+        if not ocr_text or not ocr_text.strip():
+            raise HTTPException(status_code=422, detail="Could not extract text from the file.")
+
+        logger.info(f"Re-extraction OCR: extracted {len(ocr_text)} characters from '{doc.name}'")
+
+        # Step 2: Run expert LLM field extraction (Gemini 2.5 Flash)
+        expert_raw = OCRExtractor.extract(ocr_text)
+        expert_fields = OCRExtractor.to_legacy_fields(expert_raw)
+
+        if not expert_fields:
+            raise HTTPException(status_code=503, detail="LLM field extraction returned empty results.")
+
+        # Step 3: Merge with existing extracted fields (keep any the LLM left null)
+        existing_fields = doc.get_extracted_fields() or {}
+        merged = {**existing_fields, **{k: v for k, v in expert_fields.items() if v is not None}}
+
+        # Step 4: Apply PostOCRCorrector (key casing + geographic corrections)
+        corrected = PostOCRCorrector.correct_fields(merged)
+
+        # Step 5: Encrypt and save back to the database
+        encryption_service = EncryptionService()
+        corrected_json_str = _json.dumps(corrected)
+        doc.extracted_json = encryption_service.encrypt(corrected_json_str)
+
+        # Audit log
+        audit = AuditLog(user_id=current_user.id, action=f"REEXTRACT_DOCUMENT:{doc.id}")
+        db.add(audit)
+        db.commit()
+        db.refresh(doc)
+
+        logger.info(f"Re-extraction complete for '{doc.name}': {len(corrected)} fields saved.")
+
+        return {
+            "message": f"Successfully re-extracted fields for '{doc.name}' using Gemini 2.5 Flash.",
+            "document_id": doc.id,
+            "corrected_fields": corrected,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Re-extraction failed for document {id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Re-extraction failed: {str(e)}")

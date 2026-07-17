@@ -31,6 +31,36 @@ class Document(Base):
     tags = relationship("DocumentTag", back_populates="document", cascade="all, delete-orphan")
     entities = relationship("Entity", back_populates="document", cascade="all, delete-orphan")
 
+    def get_extracted_fields(self) -> dict:
+        """
+        Helper method to safely decrypt and parse the extracted_json payload.
+        Handles both plaintext JSON and encrypted Fernet base64 strings gracefully.
+        """
+        from app.services.encryption_service import EncryptionService
+        import json
+        
+        if not self.extracted_json:
+            return {}
+            
+        val = self.extracted_json.strip()
+        
+        # Detect if the value is encrypted (Fernet tokens start with gAAAAA)
+        if val.startswith("gAAAAA"):
+            try:
+                val = EncryptionService.decrypt(val)
+            except Exception:
+                pass
+                
+        try:
+            return json.loads(val) if val else {}
+        except Exception:
+            # Fallback if the database was somehow storing double-encoded JSON or direct plaintext
+            try:
+                return json.loads(self.extracted_json)
+            except Exception:
+                return {}
+
+
     # Composite indexes for common query patterns
     __table_args__ = (
         Index("ix_documents_user_id", "user_id"),

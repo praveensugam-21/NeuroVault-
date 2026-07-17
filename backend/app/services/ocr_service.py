@@ -17,7 +17,7 @@ def get_easyocr_reader():
             logger.info("Initializing EasyOCR reader (this may take a moment on first load)...")
             # Set download_enabled=True to fetch model files if not present.
             # We initialize for English (en) and Hindi (hi) which is common for Indian documents.
-            _easyocr_reader = easyocr.Reader(['en', 'hi'], gpu=False)
+            _easyocr_reader = easyocr.Reader(['en', 'hi'], gpu=False, model_storage_directory=settings.MODEL_CACHE_DIR)
         except Exception as e:
             logger.error(f"Failed to initialize EasyOCR: {str(e)}")
             _easyocr_reader = None

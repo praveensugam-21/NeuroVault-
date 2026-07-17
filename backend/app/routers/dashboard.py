@@ -94,12 +94,7 @@ def get_timelines(
     career_timeline = []
 
     for doc in documents:
-        fields = {}
-        if doc.extracted_json:
-            try:
-                fields = json.loads(doc.extracted_json)
-            except Exception:
-                pass
+        fields = doc.get_extracted_fields()
 
         # Parse Academic
         if doc.category == "Academic Records":
@@ -162,34 +157,31 @@ def get_expiry_alerts(
 
     alerts = []
     for doc in documents:
-        if doc.extracted_json:
-            try:
-                fields = json.loads(doc.extracted_json)
-                expiry_str = fields.get("expiry_date") or fields.get("validity")
-                if expiry_str:
-                    # Check if date is upcoming
-                    # Calculate days remaining
-                    days_left = None
-                    for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
-                        try:
-                            dt = datetime.strptime(expiry_str, fmt)
-                            delta = dt - datetime.utcnow()
-                            days_left = delta.days
-                            break
-                        except ValueError:
-                            continue
-                    
-                    if days_left is not None:
-                        alerts.append({
-                            "document_id": doc.id,
-                            "name": doc.name,
-                            "document_type": doc.document_type,
-                            "expiry_date": expiry_str,
-                            "days_remaining": days_left,
-                            "priority": "high" if days_left < 30 else "medium" if days_left < 90 else "low"
-                        })
-            except Exception:
-                pass
+        fields = doc.get_extracted_fields()
+        if fields:
+            expiry_str = fields.get("expiry_date") or fields.get("validity")
+            if expiry_str:
+                # Check if date is upcoming
+                # Calculate days remaining
+                days_left = None
+                for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+                    try:
+                        dt = datetime.strptime(expiry_str, fmt)
+                        delta = dt - datetime.utcnow()
+                        days_left = delta.days
+                        break
+                    except ValueError:
+                        continue
+                
+                if days_left is not None:
+                    alerts.append({
+                        "document_id": doc.id,
+                        "name": doc.name,
+                        "document_type": doc.document_type,
+                        "expiry_date": expiry_str,
+                        "days_remaining": days_left,
+                        "priority": "high" if days_left < 30 else "medium" if days_left < 90 else "low"
+                    })
 
     # Sort by days remaining ascending
     alerts_sorted = sorted(alerts, key=lambda x: x["days_remaining"])

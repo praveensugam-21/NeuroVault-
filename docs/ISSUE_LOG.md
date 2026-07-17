@@ -272,7 +272,199 @@ This file is a running log of all failures, errors, installation bugs, and logic
 
   **Layer 3 — Confidence Gate** (from Issue #010): Ollama results with `confidence_score < 0.45` still fall through to the rule-based parser.
 
-- **Learning:**
   When using LLMs for classification on structured domain problems, always add a post-validation layer that uses deterministic rules to sanity-check the LLM output. LLMs are probabilistic — they will guess rather than abstain. The rule-based validator acts as a hard constraint filter over the LLM's soft classification.
+
+---
+
+## Session 3 — 2026-07-17: OCR Fix, Gemini 2.5 Integration & Project Restructuring
+
+This session resolved a chain of cascading issues that prevented AI-assisted OCR correction from running. The root cause was an invalid Gemini API key at upload time; subsequent work hardened the system against each failure mode that was discovered.
+
+---
+
+### Issue #011 — Backend Healthcheck Failure (curl not installed)
+- **Date:** 2026-07-17
+- **Phase:** Docker Runtime
+- **File:** [docker-compose.yml](file:///e:/Desktop/AI%20CHATBOT/docker-compose.yml)
+- **Error Message:**
+  ```text
+  iris_backend: health: /bin/sh: curl: not found
+  ```
+- **Root Cause:**
+  The backend `healthcheck` in `docker-compose.yml` used `curl` to probe the `/health` endpoint. The Python-slim Docker base image does not include `curl`, so the healthcheck failed permanently. The container showed `(unhealthy)` even though the FastAPI server was running correctly.
+- **What I Tried:**
+  - Inspected container logs: `docker compose logs backend --tail=30`
+  - Confirmed `curl` is not in the Python 3.11-slim image.
+- **Fix:**
+  Replaced the `curl` command with a Python one-liner using the standard library `urllib.request`:
+  ```yaml
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 60s
+  ```
+  No extra packages required — `urllib` is always available in any Python installation.
+- **Learning:**
+  Never rely on system utilities (`curl`, `wget`, `jq`) in Docker healthchecks for language-runtime containers. Always use the runtime's own standard library for self-probing.
+
+---
+
+### Issue #012 — Gemini API Key Invalid (old placeholder key)
+- **Date:** 2026-07-17
+- **Phase:** LLM Integration
+- **File:** [.env](file:///e:/Desktop/AI%20CHATBOT/.env), [gemini_service.py](file:///e:/Desktop/AI%20CHATBOT/backend/app/services/gemini_service.py)
+- **Error Message:**
+  ```text
+  WARNING:iris.gemini: Gemini API key validation failed: 400 API_KEY_INVALID.
+  Falling back to Ollama/local rules.
+  ```
+- **Root Cause:**
+  The `.env` file contained a stale or placeholder `GEMINI_API_KEY`. The `GeminiService.is_available()` probe call failed and marked the client `_broken=True`, causing all document processing to fall back to Ollama (which was timing out on CPU) and then the local rules engine. This meant LLM correction never ran on uploaded documents.
+- **Fix:**
+  Generated a new API key from [https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey), updated `GEMINI_API_KEY` in `.env`, and restarted the backend container.
+- **Learning:**
+  Always verify the Gemini key is active by checking for `"Gemini API key verified successfully"` in `docker compose logs backend` after setup.
+
+---
+
+### Issue #013 — gemini-1.5-flash Deprecated for New AQ. Prefix Keys
+- **Date:** 2026-07-17
+- **Phase:** LLM Integration
+- **File:** [config.py](file:///e:/Desktop/AI%20CHATBOT/backend/app/config.py)
+- **Error Message:**
+  ```text
+  google.api_core.exceptions.NotFound: 404 models/gemini-1.5-flash is not found for API version v1beta
+  ```
+- **Root Cause:**
+  The backend had `model = "gemini-1.5-flash"` hardcoded. New API keys from Google AI Studio (starting with `AQ.`, project-scoped) only support newer model versions. `gemini-1.5-flash` is deprecated for this key type.
+- **Fix:**
+  1. Added `GEMINI_MODEL: str = "gemini-2.5-flash"` to `config.py`.
+  2. Updated `gemini_service.py` to use `settings.GEMINI_MODEL` everywhere — no hardcoded model name.
+  3. Updated `.env.example` with `GEMINI_MODEL=gemini-2.5-flash`.
+- **Learning:**
+  Never hardcode LLM model names in source code. Read from config so users can upgrade models without code changes.
+
+---
+
+### Issue #014 — Gemini Probe Returned Empty (thinking token budget too small)
+- **Date:** 2026-07-17
+- **Phase:** LLM Integration
+- **File:** [gemini_service.py](file:///e:/Desktop/AI%20CHATBOT/backend/app/services/gemini_service.py)
+- **Error Message:**
+  ```text
+  WARNING:iris.gemini: Gemini probe returned empty response. Marking as unavailable.
+  ```
+- **Root Cause:**
+  The key validation probe used `max_output_tokens=10`. The `gemini-2.5-flash` model uses internal "thinking tokens" before generating visible output. With only 10 tokens budgeted, the entire token allocation was consumed by thinking, leaving zero tokens for the actual `"READY"` response — resulting in an empty `text` field.
+- **Fix:**
+  Increased probe `max_output_tokens` from `10` to `100`:
+  ```python
+  config=types.GenerateContentConfig(max_output_tokens=100, temperature=0.0)
+  ```
+- **Learning:**
+  Gemini 2.5 series (thinking models) require a minimum token budget to return non-empty responses. Use `max_output_tokens >= 100` in all probe/validation calls.
+
+---
+
+### Issue #015 — Aadhaar Name Shows 'Pravden Ratlimum' (no LLM correction at upload time)
+- **Date:** 2026-07-17
+- **Phase:** Document Processing / OCR Correction
+- **File:** [document_processor.py](file:///e:/Desktop/AI%20CHATBOT/backend/app/services/document_processor.py), [ocr_extractor.py](file:///e:/Desktop/AI%20CHATBOT/backend/app/services/ocr_extractor.py)
+- **Observed:**
+  ```text
+  Vault shows — Name: "Pravden Ratlimum"  (actual: Praveen Rathinam)
+  ```
+- **Root Cause:**
+  The Aadhaar document was uploaded while Gemini was invalid (Issue #012) and Ollama was timing out (Issue #017). The fallback rules engine applied regex extraction directly on raw EasyOCR output without LLM name correction. EasyOCR character confusions (`ee→d`, `hin→lim`) produced the garbled name, which was then permanently saved.
+- **Fix (Three-part):**
+  1. Fixed the Gemini key (Issue #012) — primary fix enabling LLM correction going forward.
+  2. Added `POST /api/documents/{id}/reextract` endpoint — re-runs the full correction pipeline (OCR correction → LLM extraction → entity re-linking → ChromaDB update) on any previously ingested document without re-uploading.
+  3. Added `"Ratlimum" → "Rathinam"` to the `PostOCRCorrector` known corrections dictionary.
+- **Learning:**
+  OCR + LLM pipelines must include a recovery path for documents ingested during LLM downtime. A `/reextract` endpoint is not optional — it is essential for production use.
+
+---
+
+### Issue #016 — PostOCRCorrector Didn't Fix 'Jamil Nadu' (State vs state key casing)
+- **Date:** 2026-07-17
+- **Phase:** Document Processing / OCR Correction
+- **File:** [post_ocr_corrector.py](file:///e:/Desktop/AI%20CHATBOT/backend/app/services/post_ocr_corrector.py)
+- **Observed:**
+  ```text
+  State field remains "Jamil Nadu" even after PostOCRCorrector ran.
+  Pincode 600001 correctly maps to Tamil Nadu — but the correction was never applied.
+  ```
+- **Root Cause:**
+  The `extracted_json` dictionary used title-case keys (`"State"`, `"Pincode"`, `"Name"`). The PostOCRCorrector Pass 1 (pincode→state lookup) checked for `"state"` (lowercase). Because Python dict keys are case-sensitive, `"state" in extracted_fields` was always `False`, so the pincode-based state correction silently skipped every single Aadhaar card.
+  ```python
+  # BUG — title-case key never matched lowercase lookup:
+  if "state" in extracted_fields:   # Always False — key is "State"
+      extracted_fields["state"] = lookup_pincode(...)  # Never executed
+  ```
+- **Fix:**
+  Normalised all dict keys to lowercase at the start of the corrector function, ran all correction logic on lowercase keys, then restored values to the original-casing keys before returning:
+  ```python
+  lower_fields = {k.lower(): v for k, v in extracted_fields.items()}
+  # ... corrections on lower_fields["state"], lower_fields["pincode"] etc. ...
+  for key in extracted_fields:
+      extracted_fields[key] = lower_fields.get(key.lower(), extracted_fields[key])
+  ```
+- **Learning:**
+  Always normalise dictionary keys to a canonical case before lookup. Mixed-case keys are a silent failure mode — the code runs without error, the branch is simply never entered, and the bug can go undetected through many document uploads.
+
+---
+
+### Issue #017 — Ollama CPU Timeout (75+ seconds per inference)
+- **Date:** 2026-07-17
+- **Phase:** LLM Integration / Docker Runtime
+- **File:** [docker-compose.yml](file:///e:/Desktop/AI%20CHATBOT/docker-compose.yml), [config.py](file:///e:/Desktop/AI%20CHATBOT/backend/app/config.py)
+- **Error Message:**
+  ```text
+  ERROR:iris.ollama: Ollama request timed out after 120s. Falling back to local rules.
+  ```
+- **Root Cause:**
+  Containerised Ollama was running `llama3.2` (3B parameters) on CPU-only hardware inside Docker. A single inference request took 75–120+ seconds. Every document upload triggered an Ollama timeout, causing the system to always fall back to the local rules engine and never benefit from LLM correction.
+- **Fix:**
+  1. **`OLLAMA_BASE_URL=disabled` option**: When set, the backend skips the Ollama tier completely instead of waiting for a timeout. Changed the default from `http://localhost:11434` to `disabled`.
+  2. **Host bridge support**: Added `extra_hosts: host.docker.internal:host-gateway` to the backend service so users with a GPU-accelerated Ollama on their host machine can connect via `OLLAMA_BASE_URL=http://host.docker.internal:11434`.
+- **Learning:**
+  CPU inference of multi-billion parameter LLMs is unsuitable for real-time document processing. Always provide a clean disabled/skip mode. Recommend GPU (NVIDIA CUDA or Apple Metal) as the minimum viable hardware for local LLM inference.
+
+---
+
+### Issue #018 — ML Models Re-Downloaded on Every Container Restart (1.5 GB+)
+- **Date:** 2026-07-17
+- **Phase:** Docker Runtime / Performance
+- **File:** [docker-compose.yml](file:///e:/Desktop/AI%20CHATBOT/docker-compose.yml)
+- **Root Cause:**
+  HuggingFace Transformers and EasyOCR model weights were stored inside the container's ephemeral writable layer. Each `docker compose up --build` deleted and recreated the layer, triggering a full re-download of ~1.5 GB of model weights (`all-MiniLM-L6-v2`, `cross-encoder/ms-marco-MiniLM-L-6-v2`, EasyOCR CRAFT + recognition models). Cold-start time was 8+ minutes.
+- **Fix:**
+  1. Added named Docker volume `model-cache` mounted at `/data/model-cache`:
+     ```yaml
+     volumes:
+       - model-cache:/data/model-cache
+     ```
+  2. Set `HF_HOME=/data/model-cache/huggingface` and `MODEL_CACHE_DIR=/data/model-cache` in the backend environment block. HuggingFace Transformers reads `HF_HOME` automatically to locate its cache.
+- **Learning:**
+  `HF_HOME` is the standard environment variable for redirecting the HuggingFace model cache. Always mount it to a named Docker volume. Failure to do this makes every rebuild a bandwidth-intensive, time-consuming event.
+
+---
+
+### Issue #019 — Loose Files Cluttering Root and app/ Directories
+- **Date:** 2026-07-17
+- **Phase:** Project Organisation
+- **Root Cause:**
+  Over multiple development sessions, utility scripts, ad-hoc test files, and reference documents had accumulated directly in the project root and inside `backend/app/`. This made navigation confusing and risked accidentally including development artefacts in Docker image builds.
+- **Fix:**
+  Reorganised the project layout:
+  - Utility shell scripts → `scripts/` (`backup.sh`, `restore.sh`, etc.)
+  - Pytest test modules → `tests/` (top-level, outside `backend/app/`)
+  - Architecture and reference documents → `docs/`
+  - Updated `.dockerignore` and `.gitignore` to exclude `*.log`, `__pycache__/`, `.pytest_cache/`, `*.pyc`, and local `.env` files.
+- **Learning:**
+  Establish a canonical project directory structure from the start of a project. Ad-hoc file placement accumulates into compounding technical debt and makes onboarding new contributors harder.
+
 
 

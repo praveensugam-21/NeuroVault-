@@ -13,6 +13,8 @@ class OllamaService:
         Quick health check — returns True only if Ollama is reachable and has models loaded.
         Fails fast (2-second timeout) so it doesn't stall the request pipeline.
         """
+        if not settings.OLLAMA_BASE_URL or any(x in settings.OLLAMA_BASE_URL.lower() for x in ["disabled", "none", "false", "empty"]):
+            return False
         try:
             with httpx.Client(timeout=2.0) as client:
                 resp = client.get(f"{settings.OLLAMA_BASE_URL}/api/tags")

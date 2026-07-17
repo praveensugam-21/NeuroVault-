@@ -1,149 +1,221 @@
-# IRIS
+# IRIS — Intelligent Retrieval and Information System
 
-**A secure, self-hosted personal document vault. Your data stays on your machine — always.**
+> **Also known as NeuroVault** — your self-hosted, privacy-first AI document vault.
 
-IRIS is an open-source document intelligence platform you deploy on your own hardware. Upload, classify, search, and query your documents using local OCR, named entity recognition, vector search, and a local Ollama-powered Memory Assistant — all without sending any file or query to external servers.
-
-> The developer distributes the software. You own everything else.
+IRIS is a personal document intelligence platform that lets you upload, understand, and converse with your own documents — Aadhaar cards, PAN cards, resumes, bank statements, passports, and more. All data lives on **your machine**. Nothing is shared with any cloud service without your explicit consent and even then, sensitive numbers are masked before transmission.
 
 ---
 
-## What Makes IRIS Different?
+## ✨ Key Features
 
-| Feature | Traditional Cloud Apps | IRIS |
+| Feature | Description |
+|---|---|
+| 📄 **Universal OCR** | EasyOCR + pypdf extract text from scanned images and digital PDFs |
+| 🧠 **Semantic Search** | ChromaDB vector DB with MMR retrieval + CrossEncoder reranking |
+| 💬 **AI Chat Interface** | Ask questions in natural language; get cited answers from your documents |
+| 🔒 **PII Masking** | Aadhaar, PAN, passport, DL, email, phone numbers masked locally before any cloud call |
+| ⚡ **Gemini 2.5 Flash** | Primary LLM for OCR correction, field extraction, and chat |
+| 🦙 **Ollama (Optional)** | Run a fully offline LLM on your hardware; disabled by default |
+| 📐 **Local Rules Engine** | Smart regex + dictionary fallback when no LLM is available |
+| 🗃️ **Multi-user Vault** | Row-level user isolation — family or team members can share one instance |
+| 🔐 **AES-256 Encryption** | Sensitive metadata encrypted at rest in PostgreSQL |
+| 📊 **Knowledge Graph** | Automatically links entities (names, dates, orgs) across documents |
+
+---
+
+## 🏗️ Technology Stack
+
+| Layer | Technology | Version |
 |---|---|---|
-| Document storage | Provider's cloud | Your machine only |
-| Who can see your data | Provider + their staff | Only you |
-| Database | Shared cloud DB | Your private PostgreSQL |
-| AI queries | Sent to cloud | Local Ollama LLM |
-| Internet required | Always | None (100% offline) |
-| Monthly fee | Usually yes | Free (open source) |
+| **Frontend** | React + Vite + TypeScript | React 18 |
+| **Styling** | Tailwind CSS | v3 |
+| **State Management** | Zustand | — |
+| **Graph Visualisation** | React Flow | — |
+| **Backend** | FastAPI + Python | Python 3.11 |
+| **ORM** | SQLAlchemy + Alembic | — |
+| **Relational DB** | PostgreSQL | 15-alpine |
+| **Vector DB** | ChromaDB | local persistent |
+| **Embeddings** | `all-MiniLM-L6-v2` (SentenceTransformers) | 384-dim |
+| **Reranking** | `cross-encoder/ms-marco-MiniLM-L-6-v2` | — |
+| **OCR** | EasyOCR (CRAFT + ResNet/LSTM) | — |
+| **PDF Parsing** | pypdf | — |
+| **Primary LLM** | Gemini 2.5 Flash (cloud, PII-masked) | `gemini-2.5-flash` |
+| **Secondary LLM** | Ollama / llama3.2 (local, optional) | disabled by default |
+| **Auth** | JWT (access 15 min) + refresh tokens (30 days) | Argon2id hashing |
+| **Reverse Proxy** | Nginx | alpine |
+| **Containerisation** | Docker Compose | — |
 
 ---
 
-## What It Does
+## 🚀 Quick Start
 
-- **Smart Classification** — Automatically categorises documents into Identity, Academic, Financial, Professional, Medical, Vehicle, and more.
-- **OCR & PDF Parsing** — Extracts text from scanned images (EasyOCR) and digital PDFs (pypdf) without any cloud service.
-- **Metadata Extraction** — Pulls structured fields like Aadhaar numbers, PAN numbers, DOBs, expiry dates, and bank account numbers. Sensitive fields are encrypted at rest using AES-256.
-- **Knowledge Graph** — Links documents through shared entities (names, organisations, dates). Visualise connections between your Aadhaar, PAN, and bank statements.
-- **Semantic Search** — Powered by SentenceTransformer embeddings (ChromaDB). Find the document by meaning, not just keywords.
-- **Memory Assistant** — Ask natural language questions about your vault ("When does my driving licence expire?") and get structured, cited answers. Uses a **100% private local rules engine** or your local Ollama instance for answering queries completely offline, keeping all personal details secure on your device.
-- **Document Lock** — Lock sensitive files behind a secondary PIN. Locked files are excluded from all search results and AI queries.
-- **Audit Logs** — Every action (upload, view, lock, unlock, delete, query) is logged in your private database.
+### Prerequisites
 
----
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (with WSL2 backend on Windows)
+- Git
+- A free [Gemini API key](https://aistudio.google.com/app/apikey) *(optional but recommended)*
 
-## Quick Start (5 Steps)
-
-### Requirements
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac) or Docker Engine (Linux)
-- [Ollama](https://ollama.com) running locally on your host or as a Docker container
-
-### Installation
+### Steps
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/praveensugam-21/IRIS-.git
-cd IRIS-
+git clone https://github.com/your-username/NeuroVault.git
+cd NeuroVault
 
 # 2. Create your environment file
 cp .env.example .env
-
-# 3. Edit .env and fill in your values (see notes below)
-#    Required: POSTGRES_PASSWORD, JWT_SECRET_KEY, ENCRYPTION_KEY
-
-# 4. Start all services
-docker compose up -d
-
-# 5. Open your browser
-# → http://localhost
 ```
 
-On first boot, create your account. You are the owner and administrator of your own deployment.
+Edit `.env` and fill in your values:
 
----
+```env
+POSTGRES_PASSWORD=your_strong_password_here
+JWT_SECRET_KEY=<run: python -c "import secrets; print(secrets.token_hex(32))">
+ENCRYPTION_KEY=<run: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())">
 
-## Generating Required Keys
+# Gemini (optional — enables AI-powered OCR correction and smart chat)
+GEMINI_API_KEY=AQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+GEMINI_MODEL=gemini-2.5-flash
 
-Open a terminal and run these commands to generate secure keys:
+# Ollama (disabled by default — set to a URL to enable)
+OLLAMA_BASE_URL=disabled
+```
 
 ```bash
-# JWT Secret Key
-openssl rand -hex 32
+# 3. Start all services
+docker compose up -d
 
-# AES-256 Encryption Key (for sensitive fields)
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# 4. Wait for health checks to pass (~60 seconds on first boot)
+docker compose ps
+
+# 5. Open the app
+start http://localhost
 ```
-
-Paste the output values into your `.env` file.
 
 ---
 
-## Supported Platforms
+## ⚙️ Environment Variables
 
-IRIS requires no code changes to deploy on any of the following:
+| Variable | Default | Description |
+|---|---|---|
+| `POSTGRES_DB` | `iris` | PostgreSQL database name |
+| `POSTGRES_USER` | `iris_user` | PostgreSQL username |
+| `POSTGRES_PASSWORD` | *(required)* | PostgreSQL password — **change this** |
+| `JWT_SECRET_KEY` | *(required)* | Secret for JWT signing — generate with `openssl rand -hex 32` |
+| `ENCRYPTION_KEY` | *(required)* | Fernet key for AES-256 field encryption |
+| `GEMINI_API_KEY` | `""` (disabled) | Google AI Studio API key — leave blank for fully offline mode |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model name — use `gemini-2.5-flash` for new AQ. keys |
+| `OLLAMA_BASE_URL` | `disabled` | Ollama endpoint. Set to `http://host.docker.internal:11434` to use host Ollama, or `http://ollama:11434` for containerised Ollama |
+| `OLLAMA_MODEL` | `llama3.2` | Ollama model to use when Ollama is enabled |
+| `CHROMA_PERSIST_DIR` | `/data/chromadb` | ChromaDB storage path inside the container |
+| `UPLOADS_DIR` | `/data/uploads` | Uploaded files storage path |
+| `MODEL_CACHE_DIR` | `/data/model-cache` | HuggingFace + EasyOCR model cache path |
+| `HF_HOME` | `/data/model-cache/huggingface` | HuggingFace cache directory |
 
-| Platform | Notes |
+---
+
+## 🔁 LLM Routing
+
+IRIS uses a three-tier LLM routing strategy. It always tries the fastest/smartest option first:
+
+```
+User Query / Document Upload
+         │
+         ▼
+  ┌─────────────────────┐
+  │  1. Gemini 2.5 Flash │  ← Preferred: fast, accurate, PII-masked before sending
+  │     (Cloud, masked)  │
+  └──────────┬──────────┘
+             │ unavailable / key missing
+             ▼
+  ┌─────────────────────┐
+  │  2. Ollama (Local)  │  ← Optional: fully offline, CPU-only (slow), disabled by default
+  │     llama3.2        │
+  └──────────┬──────────┘
+             │ unavailable / disabled
+             ▼
+  ┌────────────────────────────┐
+  │  3. Smart Local Rules      │  ← Always available: regex + pincode/state dict + fuzzy match
+  │     Engine (Offline)       │
+  └────────────────────────────┘
+```
+
+---
+
+## 🔒 Privacy Architecture
+
+IRIS is privacy-first. Before any text is sent to Gemini:
+
+1. **PII Masking** — `PIIMasker` scans for Aadhaar, PAN, Passport, DL, email, phone numbers, and bank account numbers using regex patterns.
+2. **Placeholder Substitution** — Each PII value is replaced with a token like `[AADHAAR_0]`, `[PAN_0]`, `[EMAIL_1]`.
+3. **Cloud Transmission** — Only the masked text (with placeholder tokens) is sent to Gemini.
+4. **Local Unmasking** — The LLM response containing placeholder tokens is unmasked locally using the in-memory mapping dictionary.
+
+**Nothing that reaches Google contains a real Aadhaar number, PAN number, or any other sensitive identifier.**
+
+See [docs/10_SECURITY_AND_PRIVACY.md](docs/10_SECURITY_AND_PRIVACY.md) for full details.
+
+---
+
+## 📁 Project Structure
+
+```
+NeuroVault/
+├── backend/
+│   ├── app/
+│   │   ├── config.py              # Settings (env vars, feature flags)
+│   │   ├── main.py                # FastAPI application entry point
+│   │   ├── database.py            # SQLAlchemy engine + session factory
+│   │   ├── models/                # ORM models (User, Document, Entity …)
+│   │   ├── schemas/               # Pydantic request/response schemas
+│   │   ├── routers/               # API route handlers
+│   │   ├── pipeline/              # Document pipeline orchestration
+│   │   └── services/
+│   │       ├── ocr_service.py         # PDF → image → EasyOCR dispatch
+│   │       ├── ocr_extractor.py       # Expert prompt OCR field extractor
+│   │       ├── post_ocr_corrector.py  # Three-pass OCR correction engine
+│   │       ├── pii_masker.py          # Local PII detection & masking
+│   │       ├── gemini_service.py      # Gemini 2.5 Flash wrapper
+│   │       ├── ollama_service.py      # Ollama local LLM wrapper
+│   │       ├── embedding_service.py   # SentenceTransformer + ChromaDB
+│   │       ├── rag_pipeline.py        # MMR retrieval + CrossEncoder reranking
+│   │       ├── document_processor.py  # Classification & metadata extraction
+│   │       ├── encryption_service.py  # AES-256 Fernet field encryption
+│   │       ├── knowledge_graph.py     # Entity linking & graph edges
+│   │       └── security.py            # JWT + Argon2id auth helpers
+│   ├── Dockerfile
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── pages/                 # Upload, Vault, Chat, Dashboard …
+│   │   ├── components/            # Reusable UI components
+│   │   └── store/                 # Zustand state slices
+│   └── Dockerfile
+├── nginx/
+│   └── nginx.conf                 # Reverse proxy + rate limiting config
+├── docs/                          # Full technical documentation
+├── scripts/                       # backup.sh, restore.sh, utility scripts
+├── docker-compose.yml
+├── .env.example                   # Template — copy to .env and fill in
+├── README.md
+└── DEPLOYMENT.md
+```
+
+---
+
+## 📖 Documentation
+
+| Doc | Description |
 |---|---|
-| Windows Laptop | Docker Desktop required |
-| Mac | Docker Desktop required |
-| Linux Desktop/Server | Docker Engine |
-| Raspberry Pi 4+ | Use ARM-compatible images |
-| Synology NAS | Enable Container Manager |
-| Linux VPS (DigitalOcean, Linode) | Recommended for shared/family use |
-| AWS EC2 | t3.medium or larger |
-| Azure VM | Standard_B2s or larger |
-| Google Cloud VM | e2-medium or larger |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Full deployment and operations guide |
+| [docs/01_ARCHITECTURE.md](docs/01_ARCHITECTURE.md) | System architecture and service diagrams |
+| [docs/10_SECURITY_AND_PRIVACY.md](docs/10_SECURITY_AND_PRIVACY.md) | Security model and privacy contract |
+| [docs/11_PARSING_ENGINES.md](docs/11_PARSING_ENGINES.md) | OCR pipeline and correction engines |
+| [docs/06_VECTOR_DB_AND_RAG.md](docs/06_VECTOR_DB_AND_RAG.md) | ChromaDB, embeddings, MMR + reranking |
+| [docs/ISSUE_LOG.md](docs/ISSUE_LOG.md) | Full debug and issue history |
 
 ---
 
-## Architecture
+## 📄 License
 
-```
-Your Device / Server
-┌────────────────────────────────────────────────────────────┐
-│                                                            │
-│   Browser  ──►  Nginx (Port 80/443)                       │
-│                    │                                       │
-│                    ├──► Frontend (React + Vite)            │
-│                    │                                       │
-│                    └──► Backend API (FastAPI)              │
-│                              │                             │
-│                    ┌─────────┼─────────┐                   │
-│                    ▼         ▼         ▼                   │
-│               PostgreSQL  ChromaDB  Uploads/               │
-│               (Relational) (Vectors) (Files)               │
-│                                                            │
-│   All data is stored in Docker named volumes on YOUR disk  │
-└────────────────────────────────────────────────────────────┘
-```
-
-All data stays completely isolated on your infrastructure, running fully locally and offline.
-
-
----
-
-## Documentation
-
-| File | Description |
-|---|---|
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Full deployment guide (HTTPS, VPS, backup, update) |
-| [database.md](database.md) | PostgreSQL schema, Alembic migrations, pgAdmin |
-| [security.md](security.md) | Encryption, authentication, privacy architecture |
-| [docs/01_ARCHITECTURE.md](docs/01_ARCHITECTURE.md) | System architecture deep dive |
-| [docs/10_SECURITY_AND_PRIVACY.md](docs/10_SECURITY_AND_PRIVACY.md) | Security & privacy policy |
-
----
-
-## Test Credentials (Development Only)
-
-For local testing after first boot:
-- Register any email and password you choose — you are the admin.
-- Secondary PIN: Set via **Settings → Security PIN** after login.
-
----
-
-## License
-
-IRIS is open-source software. You are free to use, modify, and self-host it.
+MIT © 2026 NeuroVault Contributors

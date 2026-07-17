@@ -37,8 +37,15 @@ class DocumentResponse(BaseModel):
     @classmethod
     def parse_extracted_json(cls, v: Any) -> Any:
         if isinstance(v, str):
+            val = v.strip()
+            if val.startswith("gAAAAA"):
+                from app.services.encryption_service import EncryptionService
+                try:
+                    val = EncryptionService.decrypt(val)
+                except Exception:
+                    pass
             try:
-                return json.loads(v)
+                return json.loads(val)
             except json.JSONDecodeError:
                 return {}
         return v

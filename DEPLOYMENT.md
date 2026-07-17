@@ -1,264 +1,332 @@
 # IRIS — Deployment Guide
 
-This document covers every aspect of deploying, configuring, securing, updating, and backing up your IRIS instance.
+This guide covers everything needed to install, configure, run, and maintain a self-hosted IRIS instance using Docker Compose.
 
 ---
 
-## 1. Requirements
+## Requirements
 
 | Requirement | Minimum | Recommended |
 |---|---|---|
-| RAM | 2 GB | 4 GB+ |
-| Disk | 10 GB free | 50 GB+ |
-| CPU | 2 cores | 4 cores |
-| Docker | Engine 24+ | Latest |
-| Docker Compose | v2+ | Latest |
-| Internet | None | — |
+| **OS** | Windows 10/11 (WSL2), Ubuntu 20.04+, macOS 12+ | Ubuntu 22.04 LTS |
+| **RAM** | 4 GB | 8 GB+ |
+| **Disk** | 10 GB free | 20 GB+ (model cache is ~1.5 GB) |
+| **Docker** | Docker Desktop 4.x / Docker Engine 24+ | Latest stable |
+| **Docker Compose** | v2.x (plugin) | Latest stable |
+| **Internet** | Required on first boot (model download) | — |
+
+> [!WARNING]
+> WSL2 on Windows requires free space on the **C: drive** for the WSL2 virtual disk (`ext4.vhdx`). If C: is full, Docker will throw I/O errors. Move the IRIS project to a secondary drive (e.g., `E:\`) to avoid filling up C:.
 
 ---
 
-## 2. Basic Installation (Local / Home Server)
+## 1. Installation
 
 ### Step 1 — Clone the Repository
 
-```bash
-git clone https://github.com/praveensugam-21/IRIS-.git
-cd IRIS-
+```powershell
+git clone https://github.com/your-username/NeuroVault.git
+cd NeuroVault
 ```
 
 ### Step 2 — Create Your Environment File
 
-```bash
-cp .env.example .env
+```powershell
+copy .env.example .env
 ```
 
-Open `.env` and fill in all `CHANGE_ME_` values:
+Then open `.env` in a text editor and fill in every value. See the [Environment Variables Reference](#environment-variables-reference) below.
 
-```env
-POSTGRES_PASSWORD=your_strong_password_here
-JWT_SECRET_KEY=<output of: openssl rand -hex 32>
-ENCRYPTION_KEY=<output of: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())">
+### Step 3 — Generate Security Keys
+
+Open a terminal and run these commands to generate cryptographically secure keys:
+
+```powershell
+# JWT signing key (paste into JWT_SECRET_KEY)
+python -c "import secrets; print(secrets.token_hex(32))"
+
+# AES-256 encryption key (paste into ENCRYPTION_KEY)
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-> [!IMPORTANT]
-> Never commit your `.env` file to any repository. It contains your database password and encryption key. The `.gitignore` file already excludes it.
+### Step 4 — Start All Services
 
-### Step 3 — Start All Services
-
-```bash
+```powershell
 docker compose up -d
 ```
 
-Docker will pull images and build containers. First boot takes 3–8 minutes as ML models are downloaded. Subsequent boots take under 30 seconds.
+On first boot, Docker will:
+1. Build the backend and frontend containers (~3–5 minutes)
+2. Download PostgreSQL, Nginx, and Ollama images
+3. Download ML model weights into the `model-cache` volume (~1.5 GB on first run)
 
-### Step 4 — Verify Services Are Running
+> [!NOTE]
+> Subsequent restarts are fast because the `model-cache` Docker volume persists the HuggingFace and EasyOCR model weights between container restarts.
 
-```bash
+### Step 5 — Verify All Services Are Healthy
+
+```powershell
 docker compose ps
 ```
 
-All four services (`postgres`, `backend`, `frontend`, `nginx`) should show `healthy` or `running`.
+Expected output (all services should show `healthy` or `running`):
 
-### Step 5 — Open the Application
+```
+NAME            STATUS                    PORTS
+iris_postgres   Up X minutes (healthy)    5432/tcp
+iris_backend    Up X minutes (healthy)    8000/tcp
+iris_frontend   Up X minutes             
+iris_ollama     Up X minutes             0.0.0.0:11434->11434/tcp
+iris_nginx      Up X minutes             0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp
+```
 
-Navigate to **http://localhost** in your browser.
+### Step 6 — Access the Application
 
-Register your account. The first account automatically becomes the administrator of your deployment.
+Open your browser and navigate to:
+
+```
+http://localhost
+```
+
+Register your first account. The first registered user is the owner of that IRIS instance.
 
 ---
 
-## 3. Checking Service Health
+## 2. Gemini API Key Setup
+
+Gemini 2.5 Flash is the primary LLM used for OCR correction, field extraction, and the chat interface. It requires an API key from Google AI Studio.
+
+### Getting Your Key
+
+1. Go to [https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
+2. Sign in with your Google account
+3. Click **"Create API key"** and select a Google Cloud project (or create a new one)
+4. Copy the generated key
+
+> [!IMPORTANT]
+> API keys generated from Google AI Studio now start with the prefix `AQ.` (project-scoped keys). These are **different** from the older `AIza...` style keys. Make sure you use a new `AQ.` prefix key.
+
+### Configuring the Key
+
+In your `.env` file:
+
+```env
+GEMINI_API_KEY=AQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+> [!NOTE]
+> The old model `gemini-1.5-flash` is deprecated and does not work with new `AQ.` prefix keys. Always use `gemini-2.5-flash` or a newer model.
+
+### Key Validation
+
+On first request to the backend, IRIS automatically validates the key with a probe call:
+
+```
+Gemini probe → "Reply with only the word: READY"
+Expected response: non-empty text
+```
+
+If the probe fails (wrong key, quota exhausted, etc.), IRIS automatically falls back to Ollama or the local rules engine. You will see this in the backend logs:
 
 ```bash
-# View real-time logs for all services
-docker compose logs -f
+docker compose logs backend --tail=50
+```
 
-# Check only the backend
-docker compose logs -f backend
+---
 
-# Check only the database
-docker compose logs -f postgres
+## 3. Ollama Configuration
 
-# API health check endpoint
+Ollama provides a fully offline LLM option. It is **disabled by default** because running a 3B parameter model on CPU inside Docker takes 75+ seconds per inference.
+
+### Option A — Disabled (Default)
+
+```env
+OLLAMA_BASE_URL=disabled
+```
+
+When set to `disabled`, the backend skips Ollama entirely and falls back directly to the Local Rules Engine if Gemini is also unavailable.
+
+### Option B — Use Host-Installed Ollama
+
+If you have Ollama installed on your Windows/Linux host, you can connect the backend container to it over the `host.docker.internal` bridge (already configured in `docker-compose.yml`):
+
+```env
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+OLLAMA_MODEL=llama3.2
+```
+
+Then start Ollama on your host machine:
+
+```powershell
+# Pull the model (first time only)
+ollama pull llama3.2
+
+# Ollama serves automatically on localhost:11434
+ollama serve
+```
+
+> [!TIP]
+> Running Ollama on a machine with a dedicated GPU (NVIDIA CUDA or Apple Metal) is dramatically faster. A GPU-accelerated llama3.2 answers in 2–5 seconds versus 75+ seconds on CPU.
+
+### Option C — Containerised Ollama
+
+The `docker-compose.yml` includes a containerised Ollama service. To enable it:
+
+1. Set `OLLAMA_BASE_URL=http://ollama:11434` in `.env`
+2. Run `docker compose up -d ollama` to start the container
+3. Pull a model into the container:
+   ```powershell
+   docker exec -it iris_ollama ollama pull llama3.2
+   ```
+
+> [!WARNING]
+> The containerised Ollama stores models in `./ollama_data/` on the project folder (not C:) to avoid filling up the system drive.
+
+---
+
+## 4. Re-Extracting Documents
+
+If a document was uploaded while the Gemini key was invalid (or Ollama was unavailable), the stored metadata may contain raw garbled OCR output. You can trigger re-extraction once a valid LLM is configured:
+
+```bash
+# Re-extract a specific document by ID
+curl -X POST http://localhost/api/documents/{document_id}/reextract \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+This endpoint re-runs the full OCR correction and field extraction pipeline using the currently active LLM.
+
+---
+
+## 5. Health Checks
+
+The backend health check uses Python's built-in `urllib` (no `curl` required):
+
+```yaml
+# In docker-compose.yml:
+healthcheck:
+  test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 60s
+```
+
+To manually check service health:
+
+```powershell
+# All services at once
+docker compose ps
+
+# Backend health endpoint
 curl http://localhost/health
+
+# View backend logs
+docker compose logs backend --tail=100 --follow
 ```
 
 ---
 
-## 4. Configuring HTTPS (Production VPS)
+## 6. Updating IRIS
 
-### Option A: Nginx with a Self-Signed Certificate (Local Network)
+```powershell
+# Pull latest images and rebuild
+git pull
+docker compose pull
+docker compose up -d --build
 
-Generate a self-signed certificate for local HTTPS:
-
-```bash
-mkdir -p nginx/certs
-openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-  -keyout nginx/certs/server.key \
-  -out nginx/certs/server.crt \
-  -subj "/CN=iris.local"
+# Verify all services are healthy
+docker compose ps
 ```
 
-Then update `nginx/nginx.conf` to enable the HTTPS server block (uncomment the `443` section).
-
-### Option B: Caddy (Automatic Free HTTPS for Public VPS)
-
-If you have a domain name pointing to your VPS, replace Nginx with Caddy for automatic certificate management:
-
-1. Remove the `nginx` service from `docker-compose.yml`.
-2. Add the Caddy service instead:
-
-```yaml
-caddy:
-  image: caddy:alpine
-  restart: unless-stopped
-  ports:
-    - "80:80"
-    - "443:443"
-  volumes:
-    - ./Caddyfile:/etc/caddy/Caddyfile:ro
-    - caddy-data:/data
-  networks:
-    - iris-net
-```
-
-3. Create a `Caddyfile` in the root:
-
-```
-your-domain.com {
-    reverse_proxy /api/* backend:8000
-    reverse_proxy /* frontend:80
-}
-```
-
-Caddy automatically obtains and renews a free Let's Encrypt certificate.
+> [!NOTE]
+> Your data (PostgreSQL, ChromaDB, uploads, model cache) is stored in named Docker volumes and is **not affected** by rebuilds.
 
 ---
 
-| Variable | Required | Description |
-|---|---|---|
-| `POSTGRES_DB` | Yes | Database name (default: `iris`) |
-| `POSTGRES_USER` | Yes | Database username |
-| `POSTGRES_PASSWORD` | **Yes** | Strong database password |
-| `JWT_SECRET_KEY` | **Yes** | Random 32-byte hex string for JWT signing |
-| `ENCRYPTION_KEY` | **Yes** | Fernet key for AES-256 field encryption |
-| `OLLAMA_BASE_URL` | No | URL to containerized or host Ollama (default: `http://ollama:11434`) |
-| `OLLAMA_MODEL` | No | Name of the local LLM model to pull/use (default: `llama3.2`) |
-| `UPLOAD_DIRECTORY` | No | Path inside container (default: `/data/uploads`) |
-| `CHROMADB_PATH` | No | Path inside container (default: `/data/chromadb`) |
+## 7. Backup and Restore
 
----
+### Backup
 
-## 5.1. Containerized Ollama (Local AI Integration)
-
-IRIS includes a containerized **Ollama** service out-of-the-box, allowing you to ask conversational questions about your vault entirely offline.
-
-### Drive Space Management (Non-C: Drive Mount)
-Downloading local LLM models requires **2GB to 4GB+ of storage space**. 
-
-To protect your system drive (`C:`) from running out of space, the `docker-compose.yml` mounts Ollama's data volume to a local workspace folder:
-```yaml
-  ollama:
-    image: ollama/ollama:latest
-    container_name: iris_ollama
-    volumes:
-      - ./ollama_data:/root/.ollama
-```
-Since your project workspace is located on the **E: drive** (`e:\Desktop\AI CHATBOT`), all downloaded models and caches are stored entirely on the E: drive.
-
-### Initial Model Setup (100% Private Pull)
-Once your containers are running, you must download the local model to initialize the Ollama container. Run the following command in your terminal:
-
-```bash
-docker exec -it iris_ollama ollama pull llama3.2
-```
-
-This will download the lightweight `llama3.2` model (approx. 2.0GB) directly into the `./ollama_data` folder on your E: drive.
-
-### Local Rules Fallback
-While the model is pulling, or if Ollama is offline/unreachable:
-- The backend automatically detects the unavailability of Ollama.
-- It routes query tasks to the **Smart Local Rules Engine**, which securely decrypts and extracts fields (like Aadhaar, PAN, DL, salary, and marks) directly from database tables, generating instant cited answers with zero delays.
-
-
----
-
-## 6. Backup & Restore
-
-### Create a Backup
-
-```bash
+```powershell
+# Run the automated backup script
 bash scripts/backup.sh
 ```
 
-Creates a timestamped `.tar.gz` archive inside the `backups/` folder containing:
-- A full PostgreSQL database dump
-- All uploaded documents
-- ChromaDB vector store
+The script creates a timestamped archive in `./backups/` containing:
+- PostgreSQL database dump (pg_dump)
+- ChromaDB vector store snapshot
+- Uploads directory
 
-### Restore from a Backup
+### Restore
 
-```bash
-bash scripts/restore.sh backups/iris_backup_YYYYMMDD_HHMMSS.tar.gz
+```powershell
+# Restore from a backup archive
+bash scripts/restore.sh ./backups/iris_backup_YYYYMMDD_HHMMSS.tar.gz
 ```
 
-> [!WARNING]
-> Restore will **overwrite** your current data. Always confirm you are targeting the correct backup file.
+> [!CAUTION]
+> Restore will overwrite existing data. Make a backup of the current state before restoring an older snapshot.
 
-### Automated Backups (Linux/VPS)
+### Manual Database Backup
 
-Add a cron job to run backups automatically:
+```powershell
+# Backup PostgreSQL only
+docker exec iris_postgres pg_dump -U iris_user iris > iris_backup_$(date +%Y%m%d).sql
 
-```bash
-crontab -e
-# Add this line to run a backup every day at 2 AM:
-0 2 * * * cd /path/to/IRIS- && bash scripts/backup.sh >> /var/log/iris-backup.log 2>&1
+# Restore PostgreSQL from dump
+cat iris_backup_YYYYMMDD.sql | docker exec -i iris_postgres psql -U iris_user iris
 ```
 
 ---
 
-## 7. Updating IRIS
+## 8. Stopping and Removing
 
-```bash
-# 1. Pull latest source code
-git pull origin main
-
-# 2. Rebuild and restart containers
-docker compose up -d --build
-```
-
-Your data (PostgreSQL, uploads, ChromaDB) is stored in Docker named volumes and is never deleted during updates.
-
----
-
-## 8. Stopping & Removing Services
-
-```bash
-# Stop all services (data is preserved)
+```powershell
+# Stop all containers (data preserved)
 docker compose down
 
-# Stop and remove ALL data volumes (DESTRUCTIVE — all data will be lost)
+# Stop and remove all data volumes (DESTRUCTIVE — deletes all documents, DB, vectors)
 docker compose down -v
+
+# Remove only a specific volume
+docker volume rm neurovault_postgres-data
 ```
 
 ---
 
-## 9. Deployment on Specific Platforms
+## 9. Troubleshooting
 
-### Raspberry Pi
+| Symptom | Likely Cause | Fix |
+|---|---|---|
+| Backend shows `starting` forever | ML model download in progress | Wait ~5 min, then `docker compose logs backend` |
+| `(unhealthy)` on backend | Health probe failing | `docker compose logs backend --tail=50` |
+| Gemini not working | Wrong key or deprecated model | Check key starts with `AQ.` and model is `gemini-2.5-flash` |
+| OCR names garbled | LLM was unavailable at upload time | Use `/api/documents/{id}/reextract` endpoint |
+| `I/O error` in Docker build | WSL2 disk full | Free space on C:, run `wsl --shutdown`, restart Docker |
+| Ollama timeout (75+ sec) | Running on CPU | Set `OLLAMA_BASE_URL=disabled` or use GPU machine |
+| Model re-downloading every restart | `model-cache` volume not mounted | Ensure `MODEL_CACHE_DIR` and `HF_HOME` use Docker volume paths |
 
-Use ARM-compatible images by adding `platform: linux/arm64` to services in `docker-compose.yml` that require it.
+---
 
-### Synology NAS
+## Environment Variables Reference
 
-1. Install **Container Manager** from the Package Center.
-2. Clone the repository to a shared folder.
-3. Open Container Manager → Project → Create from `docker-compose.yml`.
-
-### DigitalOcean / AWS / Azure / GCP
-
-1. Create a VM (minimum 2 GB RAM, 2 CPUs, 20 GB SSD).
-2. Install Docker: `curl -fsSL https://get.docker.com | sh`
-3. Clone the repo, configure `.env`, and run `docker compose up -d`.
-4. Configure your firewall to open ports 80 and 443.
-5. Point your domain to the server IP and use Caddy for HTTPS.
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `POSTGRES_DB` | `iris` | No | PostgreSQL database name |
+| `POSTGRES_USER` | `iris_user` | No | PostgreSQL username |
+| `POSTGRES_PASSWORD` | `changeme` | **Yes** | PostgreSQL password — change before deploying |
+| `JWT_SECRET_KEY` | placeholder | **Yes** | 32-byte hex secret for JWT signing |
+| `ENCRYPTION_KEY` | placeholder | **Yes** | Fernet key for AES-256 field encryption |
+| `GEMINI_API_KEY` | `""` | No | Google AI Studio API key (enables cloud LLM) |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | No | Gemini model name |
+| `OLLAMA_BASE_URL` | `disabled` | No | Ollama URL or `disabled` to skip |
+| `OLLAMA_MODEL` | `llama3.2` | No | Ollama model name |
+| `OLLAMA_TIMEOUT` | `120` | No | Ollama request timeout in seconds |
+| `CHROMA_PERSIST_DIR` | `/data/chromadb` | No | ChromaDB storage path (inside container) |
+| `UPLOADS_DIR` | `/data/uploads` | No | Uploads directory (inside container) |
+| `MODEL_CACHE_DIR` | `/data/model-cache` | No | ML model cache (inside container) |
+| `HF_HOME` | `/data/model-cache/huggingface` | No | HuggingFace cache directory |
+| `ENABLE_LOCAL_OCR` | `true` | No | Enable EasyOCR for image/scanned-PDF ingestion |
+| `ENABLE_VOICE_TRANSCRIPTION` | `true` | No | Enable Whisper voice note transcription |

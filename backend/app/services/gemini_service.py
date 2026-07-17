@@ -76,9 +76,9 @@ class GeminiService:
 
         try:
             probe = client.models.generate_content(
-                model="gemini-1.5-flash",
+                model=settings.GEMINI_MODEL,
                 contents="Reply with only the word: READY",
-                config=types.GenerateContentConfig(max_output_tokens=10, temperature=0.0),
+                config=types.GenerateContentConfig(max_output_tokens=100, temperature=0.0),
             )
             if probe and probe.text:
                 cls._verified = True
@@ -107,9 +107,9 @@ class GeminiService:
             return ""
 
         try:
-            logger.info("Calling Gemini API (gemini-1.5-flash)...")
+            logger.info(f"Calling Gemini API ({settings.GEMINI_MODEL})...")
             response = client.models.generate_content(
-                model="gemini-1.5-flash",
+                model=settings.GEMINI_MODEL,
                 contents=prompt,
                 config=_GENERATION_CONFIG,
             )

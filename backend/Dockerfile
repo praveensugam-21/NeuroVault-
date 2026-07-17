@@ -1,12 +1,4 @@
-# Base image
-FROM python:3.13-slim
-
-# Install system dependencies for OpenCV and PostgreSQL client
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1 \
-    libglib2.0-0 \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3.12-slim-bookworm
 
 # Set working directory
 WORKDIR /app
@@ -30,9 +22,9 @@ RUN mkdir -p /data/uploads /data/chromadb /data/model-cache
 # Expose API port
 EXPOSE 8000
 
-# Health check endpoint
+# Health check endpoint (native python to avoid curl dependency)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
 # Start FastAPI server
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

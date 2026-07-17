@@ -1,67 +1,262 @@
 # IRIS — Text Extraction & Parsing Engines
 
-This document explains the roles of the local text extraction and natural language parsing engines used inside the IRIS document intelligence system.
+This document explains the full OCR pipeline, text correction engines, and field extraction architecture used inside the IRIS document intelligence system.
+
+> **Last Updated:** 2026-07-17 — Updated for EasyOCR character confusion patterns, PostOCRCorrector key casing fix, Gemini 2.5 as LLM correction layer, and /reextract endpoint.
 
 ---
 
 ## 1. Local OCR Engine (EasyOCR & Direct PDF Extraction)
 
-### What it is
-IRIS uses a local text extraction engine. For digital documents (like digital PDFs), it extracts text layers directly using `pypdf`. For scanned documents or image uploads, it runs **EasyOCR** (built on PyTorch, running CRAFT text detection and ResNet+LSTM recognition models) entirely locally on your device.
+### What It Is
 
-### Why we use it
-To guarantee the system is **100% local-first and operational offline**, all text extraction runs on your machine. EasyOCR allows us to handle image-based documents without needing external network calls or cloud API keys.
+IRIS uses a two-path text extraction strategy depending on the document type:
 
----
+| Document Type | Extraction Method |
+|---|---|
+| Digital PDF (searchable) | `pypdf` — extracts the embedded text layer directly |
+| Scanned PDF | Rendered to page images, then processed by EasyOCR |
+| Image file (JPG, PNG, TIFF) | Passed directly to EasyOCR |
 
-## 2. Speech-to-Text Transcriber (Whisper Engine)
+**EasyOCR** is a neural OCR engine built on PyTorch that uses:
+- **CRAFT** (Character Region Awareness for Text Detection) for text detection
+- **ResNet + LSTM** for text recognition
+- CPU-only inference (no GPU required, but slower)
 
-### What it is
-Whisper is an open-source, automatic speech recognition (ASR) system trained on multilingual and multitasking data.
+All OCR runs entirely locally on your machine. No image data is ever sent to a cloud OCR service.
 
-### Why we use it
-For personal notes, users can record quick voice memos. The Whisper transcriber converts audio into clean, punctuated text which then undergoes the exact same indexing, entity extraction, and vector store pipeline as text notes.
+### EasyOCR Limitations on CPU
 
----
+EasyOCR is accurate but not perfect, particularly on low-resolution scans, unusual fonts, or smudged documents. On CPU inference, several systematic character confusion patterns have been observed:
 
-## 3. Named Entity Recognition (spaCy Parser)
+| Misread Pattern | Example | Actual |
+|---|---|---|
+| `ee` → `d` (character merge) | `Kumadr` | `Kumaar` or `Kumar` |
+| `hin` → `lim` (shape confusion) | `Tamilnadu` → `Taminadu` | `Tamil Nadu` |
+| `T` → `J` (stroke ambiguity) | `Jamil Nadu` | `Tamil Nadu` |
+| `0` → `O` (zero/letter) | `A0BCD1234E` | `A0BCD1234E` (PAN) |
+| `l` → `1` (thin stroke) | `1ast name` | `last name` |
+| State name merging | `TamilNadu` | `Tamil Nadu` |
 
-### What it is
-spaCy is an industrial-strength Natural Language Processing library in Python. It includes fast pre-trained pipeline models capable of tagging parts of speech, parsing dependencies, and identifying Named Entities (NER).
-
-### Why we use it
-We use spaCy's English model (`en_core_web_sm`) to automatically extract key entities from text:
-- **PERSON**: Names of individuals (e.g., "Ravi Kumar").
-- **ORG**: Organizations (e.g., "Income Tax Department", "CBSE").
-- **DATE**: Calendar dates (e.g., "12/04/2021", "2026-06-11").
-- **GPE**: Geopolitical entities (e.g., "New Delhi", "Maharashtra").
-
-These extracted entities form the basis of our **Knowledge Graph Linking** logic. If two separate documents contain the name "Ravi Kumar", spaCy tags them both, and the graph engine draws a relation between them.
-
----
-
-## 4. Vector Embeddings (Sentence Transformers)
-
-### What it is
-Sentence Transformers is a Python framework for sentence, text, and image embeddings. We use the model `all-MiniLM-L6-v2`.
-
-### Why we use it
-It maps sentences and paragraphs into a dense vector space (384 dimensions). 
-- Words or sentences with similar meanings are mapped close together.
-- For example, the query "doctor's prescription" and the document text "medical receipt with list of drugs" will have high cosine similarity, even if they share zero exact keyword matches.
-This powers our semantic search database (ChromaDB) to retrieve relevant records for context queries.
+These systematic errors are the primary reason IRIS runs a multi-pass correction engine after raw OCR.
 
 ---
 
-## 5. Local Natural Language Query Engine (Ollama Integration)
+## 2. PostOCRCorrector — Three-Pass Correction Engine
 
-### What it is
-Ollama is a lightweight, extensible framework for running inference models locally. We utilize the `qwen2.5:1.5b` model running locally.
+The `PostOCRCorrector` service (`backend/app/services/post_ocr_corrector.py`) runs immediately after raw EasyOCR output is obtained. It corrects common OCR errors using three sequential passes:
 
-### Why we use it
-It orchestrates the contextual query pipeline:
-1. Accepts user question.
-2. Embeds the question.
-3. Queries ChromaDB for top-K matching documents.
-4. Formats the system instruction, documents context, and query into a structured prompt template.
-5. Sends it to the local inference model (Ollama) and returns a clean, cited response.
+### Pass 1 — Pincode → State Resolution
+
+Aadhaar cards and other Indian documents include a 6-digit pincode. The corrector uses a built-in pincode-to-state lookup dictionary to verify and correct the state name field:
+
+```python
+# Example:
+extracted_fields["pincode"] = "600001"
+# → Lookup: 600001 → Tamil Nadu
+extracted_fields["state"] = "Tamil Nadu"   # Overwrites any garbled OCR state
+```
+
+This is highly reliable because pincodes are machine-readable numbers (EasyOCR rarely confuses digits) and the state name can be deterministically derived.
+
+### Pass 2 — Known OCR Corrections Dictionary
+
+A hard-coded dictionary of known character confusion corrections specific to Indian document fonts:
+
+```python
+KNOWN_CORRECTIONS = {
+    "Jamil Nadu":   "Tamil Nadu",
+    "Taminadu":     "Tamil Nadu",
+    "TamilNadu":    "Tamil Nadu",
+    "Kumadr":       "Kumar",
+    "Ratlimum":     "Rathinam",  # Common name confusion
+    # ... 50+ entries
+}
+```
+
+Each field value is checked against this dictionary and corrected if matched.
+
+### Pass 3 — Fuzzy String Matching
+
+For fields that Pass 2 doesn't correct, a fuzzy match is performed against known Indian state names, city names, and common name fragments using `difflib.get_close_matches()`. A similarity threshold of 0.8 is applied to avoid over-correction.
+
+### Key Casing Bug (Fixed 2026-07-17)
+
+A critical bug was found and fixed in the PostOCRCorrector:
+
+**Bug:** The `extracted_json` stored by the OCR extractor used `"State"` (capital S), but the corrector's lookup logic used `"state"` (lowercase):
+
+```python
+# BUG — key never matched:
+if "state" in extracted_fields:          # ← lowercase
+    pincode_state = lookup(pincode)
+    extracted_fields["state"] = pincode_state   # ← never executed
+
+# ACTUAL key in extracted_json:
+{"State": "Jamil Nadu", "Pincode": "600001"}   # ← capital S
+```
+
+**Fix:** All keys in `extracted_fields` are now normalised to lowercase before any processing, then restored to the original casing before saving:
+
+```python
+# Normalize all keys to lowercase for processing
+normalised = {k.lower(): v for k, v in extracted_fields.items()}
+
+# ... all correction logic uses lowercase keys ...
+
+# Re-apply corrected values back to original keys
+for original_key in extracted_fields:
+    if original_key.lower() in normalised:
+        extracted_fields[original_key] = normalised[original_key.lower()]
+```
+
+---
+
+## 3. OCRExtractor — Expert Prompt Pipeline
+
+The `OCRExtractor` service (`backend/app/services/ocr_extractor.py`) sits above the PostOCRCorrector and is responsible for:
+
+1. Determining the document type (Aadhaar, PAN, Passport, Resume, etc.)
+2. Building a document-type-specific expert prompt
+3. Routing the prompt through the LLM Router (Gemini → Ollama → Rules)
+4. Parsing the JSON response and merging with PostOCRCorrector output
+
+### Expert Prompt Structure
+
+Each document type has a dedicated extraction prompt template:
+
+```
+You are an expert document parser. You are given the OCR text of an Aadhaar card.
+
+Extract the following fields and return ONLY valid JSON:
+- "Name": The full name of the cardholder
+- "DOB": Date of birth in DD/MM/YYYY format
+- "Gender": Male / Female / Transgender
+- "Aadhaar": The 12-digit Aadhaar number (with or without spaces)
+- "Address": Full address
+- "Pincode": 6-digit postal code
+- "State": Indian state name
+
+OCR Text:
+---
+{masked_ocr_text}
+---
+
+Return only the JSON object. No explanation.
+```
+
+The `{masked_ocr_text}` placeholder is filled with the **PII-masked** version of the raw OCR text (Aadhaar number replaced with `[AADHAAR_0]` etc.) before sending to Gemini.
+
+### LLM Response Validation
+
+After the LLM returns a JSON response, the extractor validates:
+- All expected fields are present
+- Aadhaar number passes the Verhoeff checksum (if extractable)
+- PAN number matches the `[A-Z]{5}[0-9]{4}[A-Z]` pattern
+- Date fields parse as valid dates
+
+---
+
+## 4. Gemini 2.5 Flash as the LLM Correction Layer
+
+Gemini 2.5 Flash is the primary LLM used for OCR correction and field extraction. It provides significantly better name correction than rule-based approaches because it can use contextual reasoning.
+
+### Why Gemini 2.5 Flash
+
+| Capability | Rule-Based | Gemini 2.5 Flash |
+|---|---|---|
+| Correct garbled state names | ✅ (dictionary) | ✅ |
+| Correct garbled person names | ❌ | ✅ (contextual) |
+| Handle novel character confusions | ❌ | ✅ |
+| Structured JSON extraction | ✅ (regex) | ✅ (more reliable) |
+| Privacy (PII stays local) | ✅ | ✅ (via PII masking) |
+| Speed | ✅ Fast | ✅ Fast (< 2s) |
+| Requires internet | ✅ No | ❌ Yes |
+
+### Gemini Model Configuration
+
+```env
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+> [!IMPORTANT]
+> Use `gemini-2.5-flash`, not `gemini-1.5-flash`. The `1.5` model is deprecated and does not work with new `AQ.` prefix API keys from Google AI Studio.
+
+### Probe Token Budget
+
+`gemini-2.5-flash` uses **thinking tokens** internally even for simple requests. The validation probe call uses `max_output_tokens=100` (not 10) to ensure the model has enough token budget to return a non-empty response:
+
+```python
+# Correct probe configuration:
+config=types.GenerateContentConfig(max_output_tokens=100, temperature=0.0)
+```
+
+---
+
+## 5. What Happens When No LLM Is Available
+
+When a document is uploaded and neither Gemini nor Ollama is available:
+
+1. Raw EasyOCR text is captured.
+2. `PostOCRCorrector` runs its three passes (rule-based only).
+3. The rule-based extractor (`_process_with_rules()`) applies regex patterns to extract fields.
+4. **The extracted data may contain garbled values** (e.g., `"Name": "Pravden Ratlimum"` instead of the real name) because LLM contextual correction did not run.
+5. The document is saved with `status = COMPLETE`, but the metadata quality is limited.
+
+### How to Fix: The /reextract Endpoint
+
+Once a valid Gemini key (or Ollama) is configured, you can re-run the full correction pipeline on any previously processed document without re-uploading it:
+
+```bash
+POST /api/documents/{document_id}/reextract
+Authorization: Bearer <your_jwt_token>
+```
+
+**What reextract does:**
+1. Reloads the original raw OCR text from the database
+2. Re-runs `PostOCRCorrector` with the latest correction dictionaries
+3. Re-runs `OCRExtractor` with the currently active LLM (Gemini → Ollama → Rules)
+4. Overwrites `extracted_json` with the improved result
+5. Regenerates entity links and updates ChromaDB embeddings
+6. Sets `status = COMPLETE`
+
+**When to use reextract:**
+- After setting up a Gemini API key for the first time
+- After documents were uploaded during a Gemini outage
+- After updating correction dictionaries for new OCR error patterns
+
+---
+
+## 6. Named Entity Recognition (spaCy)
+
+After field extraction, the spaCy `en_core_web_sm` model processes the document summary to extract:
+
+| Entity Type | Examples |
+|---|---|
+| `PERSON` | "Praveen Kumar", "Ravi Shankar" |
+| `ORG` | "Income Tax Department", "CBSE" |
+| `DATE` | "12/04/2021", "March 2019" |
+| `GPE` | "New Delhi", "Tamil Nadu" |
+
+These extracted entities form the basis of the **Knowledge Graph** — if two documents mention the same person name, spaCy tags both and the graph engine draws a relation edge between them.
+
+---
+
+## 7. Vector Embeddings (Sentence Transformers)
+
+The final step in the pipeline converts the processed document text into a 384-dimensional embedding vector using `all-MiniLM-L6-v2`:
+
+```python
+from sentence_transformers import SentenceTransformer
+model = SentenceTransformer("all-MiniLM-L6-v2")
+embedding = model.encode("Aadhaar card of Praveen Kumar, Tamil Nadu")
+# → 384-dimensional float32 vector
+```
+
+This vector is stored in ChromaDB with user metadata. During search:
+- MMR (Maximal Marginal Relevance) retrieval selects diverse top-20 candidates
+- CrossEncoder (`ms-marco-MiniLM-L-6-v2`) reranks to the top-5 most relevant
+
+### Model Cache
+
+Both models are cached in the persistent `model-cache` Docker volume at `/data/model-cache/huggingface/`. The `HF_HOME` environment variable points HuggingFace Transformers to this directory. Models are downloaded once (~1.5 GB) and reused across all container restarts.

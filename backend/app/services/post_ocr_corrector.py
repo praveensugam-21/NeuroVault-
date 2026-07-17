@@ -173,10 +173,32 @@ class PostOCRCorrector:
         """
         Apply all correction passes to a dict of extracted OCR fields.
         Returns a corrected copy — never modifies the input in place.
-        """
-        result = dict(fields)
 
-        pincode = cls._clean_pincode(result.get("pincode") or result.get("pincode"))
+        Handles both capitalised keys (e.g. "State" from Aadhaar extracted_json)
+        and lowercase keys (e.g. "state" from the legacy pipeline) by normalising
+        all keys to lowercase before processing, then returning with original keys
+        preserved so existing code is not broken.
+        """
+        # ── Normalise keys to lowercase for consistent field lookups ──────────
+        # Build a lowercase-key copy for processing; keep original key map for restore
+        original_keys = {k.lower(): k for k in fields}
+        result = {k.lower(): v for k, v in fields.items()}
+
+        # ── Also normalise the Pincode / ID Number keys from Aadhaar JSON format ──
+        # Aadhaar card extracted_json stores "Pincode" / "ID Number" / "D.O.B" etc.
+        if "pincode" not in result and result.get("pincode"):
+            pass  # already lowercased above
+        # Handle Aadhaar-specific capitalised keys
+        aadhaar_remap = {
+            "id number": "aadhaar_number",
+            "phone number": "phone",
+            "d.o.b": "dob",
+        }
+        for src, dst in aadhaar_remap.items():
+            if src in result and dst not in result:
+                result[dst] = result.pop(src)
+
+        pincode = cls._clean_pincode(result.get("pincode"))
 
         # ── Pass 1: Authoritative pincode → state lookup ──────────────────────
         if pincode:
@@ -218,6 +240,7 @@ class PostOCRCorrector:
             result["address"] = cls._rebuild_address(result)
 
         return result
+
 
     @classmethod
     def _clean_pincode(cls, raw: Optional[str]) -> Optional[str]:

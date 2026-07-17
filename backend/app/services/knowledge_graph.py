@@ -98,19 +98,8 @@ class KnowledgeGraphService:
         for other in other_docs:
             other_id = other.id
             other_name = other.name
-            other_fields = {}
-            if other.extracted_json:
-                try:
-                    other_fields = json.loads(other.extracted_json)
-                except Exception:
-                    pass
-
-            this_fields = {}
-            if document.extracted_json:
-                try:
-                    this_fields = json.loads(document.extracted_json)
-                except Exception:
-                    pass
+            other_fields = other.get_extracted_fields()
+            this_fields = document.get_extracted_fields()
 
             # A. PRECEDES/FOLLOWS for academic mark sheets
             if category == "Academic Records" and other.category == "Academic Records":

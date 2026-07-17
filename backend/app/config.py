@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     # --- Cloud AI (disabled by default for privacy) ---
     # Leave empty to keep all data 100% local.
     GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.5-flash"
 
     # --- Storage Paths ---
     CHROMA_PERSIST_DIR: str = "./vector_store"

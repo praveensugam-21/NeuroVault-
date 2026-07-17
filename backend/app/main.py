@@ -99,12 +99,9 @@ def run_auto_migration():
                             from app.services.ocr_service import OCRService
                             ocr_text = OCRService.extract_text_from_file(doc.file_path, doc.file_type)
 
-                    decrypted_json_str = "{}"
-                    if doc.extracted_json:
-                        try:
-                            decrypted_json_str = EncryptionService.decrypt(doc.extracted_json)
-                        except Exception:
-                            pass
+                    import json
+                    fields = doc.get_extracted_fields()
+                    decrypted_json_str = json.dumps(fields) if fields else "{}"
 
                     # Build chunk-level indexing
                     indexed = EmbeddingService.add_document_chunks(

@@ -108,7 +108,8 @@ class DocumentPipelineManager:
             document.category = category
             document.document_type = doc_type
             document.confidence_score = confidence
-            document.extracted_json = fields_json
+            from app.services.encryption_service import EncryptionService
+            document.extracted_json = EncryptionService.encrypt(fields_json)
             document.summary = summary
             document.status = "COMPLETE"
             db.commit()

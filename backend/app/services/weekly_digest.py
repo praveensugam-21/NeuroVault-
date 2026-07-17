@@ -24,26 +24,23 @@ class WeeklyDigestService:
         ).all()
 
         for doc in all_docs:
-            if doc.extracted_json:
-                try:
-                    fields = json.loads(doc.extracted_json)
-                    exp_date_str = fields.get("expiry_date") or fields.get("validity")
-                    if exp_date_str:
-                        # Attempt to parse
-                        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"):
-                            try:
-                                dt = datetime.strptime(exp_date_str, fmt)
-                                if now <= dt <= thirty_days_later:
-                                    expiring_soon.append({
-                                        "document_name": doc.name,
-                                        "document_type": doc.document_type,
-                                        "expiry_date": exp_date_str
-                                    })
-                                    break
-                            except ValueError:
-                                continue
-                except Exception:
-                    pass
+            fields = doc.get_extracted_fields()
+            if fields:
+                exp_date_str = fields.get("expiry_date") or fields.get("validity")
+                if exp_date_str:
+                    # Attempt to parse
+                    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"):
+                        try:
+                            dt = datetime.strptime(exp_date_str, fmt)
+                            if now <= dt <= thirty_days_later:
+                                expiring_soon.append({
+                                    "document_name": doc.name,
+                                    "document_type": doc.document_type,
+                                    "expiry_date": exp_date_str
+                                })
+                                break
+                        except ValueError:
+                            continue
 
         # 2. New connections detected
         new_edges = db.query(GraphEdge).filter(

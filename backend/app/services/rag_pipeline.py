@@ -183,14 +183,7 @@ class RAGPipeline:
                 for h in hits
             )
 
-            # Safely decrypt and parse extracted fields
-            extracted_fields = {}
-            if doc.extracted_json:
-                try:
-                    decrypted = EncryptionService.decrypt(doc.extracted_json)
-                    extracted_fields = json.loads(decrypted) if decrypted else {}
-                except Exception as e:
-                    logger.error(f"Decryption failed for document {doc.id}: {e}")
+            extracted_fields = doc.get_extracted_fields()
 
             fields_summary = ", ".join(
                 f"{k}: {v}"
@@ -344,13 +337,7 @@ class RAGPipeline:
         # Preload all document metadata with decrypted fields
         docs_metadata = []
         for doc in all_completed_docs:
-            extracted_fields = {}
-            if doc.extracted_json:
-                try:
-                    decrypted = EncryptionService.decrypt(doc.extracted_json)
-                    extracted_fields = json.loads(decrypted) if decrypted else {}
-                except Exception:
-                    pass
+            extracted_fields = doc.get_extracted_fields()
             docs_metadata.append({"doc": doc, "fields": extracted_fields})
 
         # ── RULE 1: Vault Overview / Summary ─────────────────────────────────
