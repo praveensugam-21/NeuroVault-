@@ -19,53 +19,13 @@ class GeminiService:
     @classmethod
     def is_available(cls) -> bool:
         """
-        Returns True only when Gemini is both configured AND the API key is verified valid.
-        On first call, performs a minimal live probe to validate the key.
+        Returns True when Gemini is configured and not permanently marked as broken.
         """
         if cls._broken:
             return False
-        if cls._verified:
-            return True
         if not settings.GEMINI_API_KEY:
             return False
-
-        # Validate the key with a tiny probe call using REST API
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_MODEL}:generateContent?key={settings.GEMINI_API_KEY}"
-            headers = {"Content-Type": "application/json"}
-            payload = {
-                "contents": [{"parts": [{"text": "Reply with only the word: READY"}]}],
-                "generationConfig": {"maxOutputTokens": 10, "temperature": 0.0}
-            }
-            
-            with httpx.Client(timeout=10.0) as client:
-                response = client.post(url, json=payload, headers=headers)
-                
-            if response.status_code == 200:
-                data = response.json()
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                if text:
-                    cls._verified = True
-                    logger.info("Gemini API key verified successfully via REST. Service is active.")
-                    return True
-                else:
-                    logger.warning("Gemini probe returned empty response. Marking as unavailable.")
-                    cls._broken = True
-                    return False
-            else:
-                # If it's a rate limit (429) or server error (503), it's temporary
-                if response.status_code in (429, 503):
-                    logger.warning(f"Gemini API key validation failed with temporary status {response.status_code}.")
-                    return False
-                else:
-                    logger.error(f"Gemini API key validation failed with status {response.status_code}: {response.text}")
-                    cls._broken = True
-                    return False
-        except Exception as e:
-            logger.warning(f"Gemini API key validation failed: {e}. Falling back to Ollama/local rules.")
-            if not cls._is_temporary_error(e):
-                cls._broken = True
-            return False
+        return True
 
     @staticmethod
     def _is_temporary_error(e: Exception) -> bool:
@@ -118,12 +78,18 @@ class GeminiService:
                 data = response.json()
                 text = data["candidates"][0]["content"]["parts"][0]["text"]
                 if text:
+                    cls._verified = True
                     logger.info("Gemini REST API call successful.")
                     return text.strip()
                 logger.warning("Gemini REST API returned an empty response.")
                 return ""
             else:
                 logger.error(f"Gemini REST API failed with status {response.status_code}: {response.text}")
+                
+                # If it is a permanent authorization/key failure, mark broken
+                if response.status_code in (400, 403) and "API_KEY_INVALID" in response.text:
+                    cls._broken = True
+                    
                 # Create a custom exception so the caller can check status code
                 class APIError(Exception):
                     def __init__(self, code, message):
@@ -134,4 +100,4 @@ class GeminiService:
             logger.error(f"Gemini API request failed: {e}")
             if not cls._is_temporary_error(e):
                 cls._broken = True
-            return ""
+            raise e
