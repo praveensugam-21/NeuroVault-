@@ -1,60 +1,20 @@
 """
-IRIS Gemini Service — Cloud AI Integration (google-genai SDK v2)
-================================================================
-Wraps the official Google Generative AI SDK to provide structured
-completions via the Gemini API. All data sent through this service
-has been pre-processed by the local PII masking layer.
-
-Uses: google-genai (new official SDK — replaces deprecated google.generativeai)
+IRIS Gemini Service — Cloud AI Integration (Direct REST API)
+============================================================
+Provides reliable, timeout-free completions via the Gemini REST API,
+bypassing HTTP/2 and gRPC network handshake issues inside Docker/WSL.
+All data sent through this service has been pre-processed by the local PII masking layer.
 """
 import logging
-from google import genai
-from google.genai import types
+import httpx
 from app.config import settings
 
 logger = logging.getLogger("iris.gemini")
 
-# ── Generation config — optimised for accurate, structured document Q&A ───────
-_GENERATION_CONFIG = types.GenerateContentConfig(
-    temperature=0.2,
-    top_p=0.9,
-    top_k=40,
-    max_output_tokens=2048,
-    safety_settings=[
-        types.SafetySetting(category="HARM_CATEGORY_HARASSMENT",        threshold="BLOCK_ONLY_HIGH"),
-        types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH",       threshold="BLOCK_ONLY_HIGH"),
-        types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_ONLY_HIGH"),
-        types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_ONLY_HIGH"),
-    ],
-)
-
 
 class GeminiService:
-    _client: "genai.Client | None" = None
     _verified: bool = False     # True only after a successful real API call
     _broken: bool = False       # True if key was tested and failed — skip retrying
-
-    @classmethod
-    def _get_client(cls) -> "genai.Client | None":
-        """
-        Returns the singleton Gemini client, initialising it on first call.
-        Returns None if GEMINI_API_KEY is not set.
-        """
-        if cls._broken:
-            return None
-        if cls._client is not None:
-            return cls._client
-        if not settings.GEMINI_API_KEY:
-            logger.debug("GEMINI_API_KEY is not configured. Gemini will be skipped.")
-            return None
-        try:
-            cls._client = genai.Client(api_key=settings.GEMINI_API_KEY, http_options={'timeout': 10.0})
-            logger.info("Gemini client object created (key not yet verified).")
-            return cls._client
-        except Exception as e:
-            logger.error(f"Failed to create Gemini client: {e}")
-            cls._broken = True
-            return None
 
     @classmethod
     def is_available(cls) -> bool:
@@ -69,25 +29,38 @@ class GeminiService:
         if not settings.GEMINI_API_KEY:
             return False
 
-        # Validate the key with a tiny probe call
-        client = cls._get_client()
-        if not client:
-            return False
-
+        # Validate the key with a tiny probe call using REST API
         try:
-            probe = client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents="Reply with only the word: READY",
-                config=types.GenerateContentConfig(max_output_tokens=100, temperature=0.0),
-            )
-            if probe and probe.text:
-                cls._verified = True
-                logger.info("Gemini API key verified successfully. Service is active.")
-                return True
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_MODEL}:generateContent?key={settings.GEMINI_API_KEY}"
+            headers = {"Content-Type": "application/json"}
+            payload = {
+                "contents": [{"parts": [{"text": "Reply with only the word: READY"}]}],
+                "generationConfig": {"maxOutputTokens": 10, "temperature": 0.0}
+            }
+            
+            with httpx.Client(timeout=10.0) as client:
+                response = client.post(url, json=payload, headers=headers)
+                
+            if response.status_code == 200:
+                data = response.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                if text:
+                    cls._verified = True
+                    logger.info("Gemini API key verified successfully via REST. Service is active.")
+                    return True
+                else:
+                    logger.warning("Gemini probe returned empty response. Marking as unavailable.")
+                    cls._broken = True
+                    return False
             else:
-                logger.warning("Gemini probe returned empty response. Marking as unavailable.")
-                cls._broken = True
-                return False
+                # If it's a rate limit (429) or server error (503), it's temporary
+                if response.status_code in (429, 503):
+                    logger.warning(f"Gemini API key validation failed with temporary status {response.status_code}.")
+                    return False
+                else:
+                    logger.error(f"Gemini API key validation failed with status {response.status_code}: {response.text}")
+                    cls._broken = True
+                    return False
         except Exception as e:
             logger.warning(f"Gemini API key validation failed: {e}. Falling back to Ollama/local rules.")
             if not cls._is_temporary_error(e):
@@ -115,32 +88,50 @@ class GeminiService:
     @classmethod
     def generate_completion(cls, prompt: str) -> str:
         """
-        Calls Gemini 1.5 Flash to generate a text completion.
+        Calls Gemini 1.5 Flash via REST to generate a text completion.
         The prompt must already have PII masked by PIIMasker before calling this.
 
         Returns:
             The generated text, or an empty string on any failure.
         """
-        client = cls._get_client()
-        if not client:
+        if not settings.GEMINI_API_KEY or cls._broken:
             return ""
 
         try:
-            logger.info(f"Calling Gemini API ({settings.GEMINI_MODEL})...")
-            response = client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=prompt,
-                config=_GENERATION_CONFIG,
-            )
-            if response and response.text:
-                logger.info("Gemini API call successful.")
-                return response.text.strip()
+            logger.info(f"Calling Gemini REST API ({settings.GEMINI_MODEL})...")
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_MODEL}:generateContent?key={settings.GEMINI_API_KEY}"
+            headers = {"Content-Type": "application/json"}
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "topP": 0.9,
+                    "topK": 40,
+                    "maxOutputTokens": 2048
+                }
+            }
 
-            logger.warning("Gemini API returned an empty or blocked response.")
-            return ""
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(url, json=payload, headers=headers)
+
+            if response.status_code == 200:
+                data = response.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                if text:
+                    logger.info("Gemini REST API call successful.")
+                    return text.strip()
+                logger.warning("Gemini REST API returned an empty response.")
+                return ""
+            else:
+                logger.error(f"Gemini REST API failed with status {response.status_code}: {response.text}")
+                # Create a custom exception so the caller can check status code
+                class APIError(Exception):
+                    def __init__(self, code, message):
+                        self.status_code = code
+                        super().__init__(message)
+                raise APIError(response.status_code, f"Gemini API returned status {response.status_code}")
         except Exception as e:
             logger.error(f"Gemini API request failed: {e}")
             if not cls._is_temporary_error(e):
-                # Mark broken so future calls don't waste time
                 cls._broken = True
             return ""
