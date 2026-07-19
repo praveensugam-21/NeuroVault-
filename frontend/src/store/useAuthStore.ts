@@ -10,6 +10,7 @@ interface AuthState {
   loading: boolean;
   
   login: (email: string, password: string) => Promise<boolean>;
+  loginWithGoogle: (idToken: string) => Promise<boolean>;
   register: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   setupPin: (pin: string) => Promise<boolean>;
@@ -44,6 +45,23 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch (err: any) {
       set({
         error: err.response?.data?.detail || 'Authentication failed. Please verify credentials.',
+        loading: false,
+      });
+      return false;
+    }
+  },
+
+  loginWithGoogle: async (idToken) => {
+    set({ loading: true, error: null });
+    try {
+      const response = await api.post('/api/auth/google/verify', { id_token: idToken });
+      const { access_token } = response.data;
+      localStorage.setItem('access_token', access_token);
+      set({ token: access_token, isAuthenticated: true, loading: false });
+      return true;
+    } catch (err: any) {
+      set({
+        error: err.response?.data?.detail || 'Google Authentication failed.',
         loading: false,
       });
       return false;

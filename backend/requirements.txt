@@ -28,3 +28,4 @@ cryptography
 # Google Gemini SDK (new official SDK — replaces deprecated google-generativeai)
 google-genai
 pymupdf
+google-auth>=2.20.0

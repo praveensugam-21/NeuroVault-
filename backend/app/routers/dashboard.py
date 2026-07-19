@@ -1,7 +1,7 @@
 import json
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 from app.database import get_db
 from app.models.user import User
 from app.models.document import Document
@@ -167,7 +167,7 @@ def get_expiry_alerts(
                 for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
                     try:
                         dt = datetime.strptime(expiry_str, fmt)
-                        delta = dt - datetime.utcnow()
+                        delta = dt - datetime.now(timezone.utc).replace(tzinfo=None)
                         days_left = delta.days
                         break
                     except ValueError:

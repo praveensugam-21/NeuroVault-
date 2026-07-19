@@ -1,22 +1,22 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import List, Optional, Any
 from datetime import datetime
 import json
 
+
 class TagSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     tag_name: str
 
-    class Config:
-        from_attributes = True
 
 class DocumentTagResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     tag_name: str
 
-    class Config:
-        from_attributes = True
 
 class DocumentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
     name: str
     file_type: str
@@ -29,9 +29,6 @@ class DocumentResponse(BaseModel):
     is_locked: bool
     created_at: datetime
     tags: List[DocumentTagResponse] = []
-
-    class Config:
-        from_attributes = True
 
     @field_validator('extracted_json', mode='before')
     @classmethod
@@ -50,7 +47,9 @@ class DocumentResponse(BaseModel):
                 return {}
         return v
 
+
 class DocumentBriefResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
     name: str
     file_type: str
@@ -62,6 +61,3 @@ class DocumentBriefResponse(BaseModel):
     is_locked: bool
     created_at: datetime
     tags: List[DocumentTagResponse] = []
-
-    class Config:
-        from_attributes = True

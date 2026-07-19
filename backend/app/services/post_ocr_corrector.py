@@ -140,6 +140,43 @@ _KNOWN_OCR_CORRECTIONS: Dict[str, str] = {
     "jammu kashmir":  "Jammu and Kashmir",
     "puducheri":      "Puducherry",
     "pondicherry":    "Puducherry",
+    # Common name/community certificate OCR errors (Indian Southern Circle)
+    "jelvan":         "Selvan",
+    "wravaen":        "Praveen",
+    "roohinam":       "Rathinam",
+    "jelvan wravaen roohinam": "Selvan Praveen Rathinam",
+    # Community/caste name OCR corrections
+    "adl drouda":             "Adi Dravidar",
+    "adl drouda community":   "Adi Dravidar Community",
+    "adi dravida":            "Adi Dravidar",
+    "adi dravidar":           "Adi Dravidar",
+    "adi dravida community":  "Adi Dravidar Community",
+    "adigiravidar":           "Adi Dravidar",
+    "adidravidar":            "Adi Dravidar",
+    "ad dravidar":            "Adi Dravidar",
+    "adigdravidar":           "Adi Dravidar",
+    "adi dravioar":           "Adi Dravidar",
+    "ad1 dravidar":           "Adi Dravidar",
+    "scheduled castc":        "Scheduled Caste",
+    "scheduledcaste":         "Scheduled Caste",
+    "scheduled casle":        "Scheduled Caste",
+    "schedule caste":         "Scheduled Caste",
+    "sc community":           "Scheduled Caste",
+    "most backward classs":   "Most Backward Class",
+    "most backwardclass":     "Most Backward Class",
+    "backward classs":        "Backward Class",
+    "backwardclass":          "Backward Class",
+    "obc community":          "Other Backward Class",
+    # User-specific community cert OCR corrections
+    "viuorurarn":             "Viluppuram",
+    "ielmatamvanur":          "Melmalayanur",
+    "thwo proutlawana":       "Thiru Poonkavanam",
+    "proutlawana":            "Poonkavanam",
+    "thwo proutlawana tetdno": "Thiru Poonkavanam Rathinam",
+    "tetdno":                 "Rathinam",
+    "thwo":                   "Thiru",
+    "dlatriel":               "District",
+    "communwv":               "Community",
     # Common city/district mistakes
     "chenai":         "Chennai",
     "chenna1":        "Chennai",
@@ -214,8 +251,8 @@ class PostOCRCorrector:
                         )
                     result["state"] = pincode_state
 
-        # ── Pass 2: Known OCR correction dictionary ───────────────────────────
-        for field in ("state", "city", "district", "locality"):
+        # ── Pass 2: Known OCR correction dictionary ──────────────────────────────────
+        for field in ("state", "city", "district", "locality", "community", "caste_category", "name", "father_name"):
             val = result.get(field)
             if val:
                 corrected = cls._apply_known_corrections(val)

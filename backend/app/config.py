@@ -47,6 +47,19 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
 
+    # --- Google OAuth Settings ---
+    # Set via Google Cloud Console. Leave empty to disable Google Sign-In.
+    GOOGLE_CLIENT_ID: str = ""
+
+    # --- CORS Settings ---
+    # Comma-separated list of allowed origins in production.
+    # Example: "https://yourdomain.com,https://app.yourdomain.com"
+    # Leave empty for development (defaults to localhost variants).
+    ALLOWED_ORIGINS: str = ""
+
+    # --- File Upload Limits ---
+    MAX_UPLOAD_SIZE_MB: int = 50  # Maximum file upload size in megabytes
+
     # --- Storage Paths ---
     CHROMA_PERSIST_DIR: str = "./vector_store"
     UPLOADS_DIR: str = "./uploads"

@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from app.models.document import Document
 from app.models.graph_edge import GraphEdge
@@ -11,7 +11,7 @@ class WeeklyDigestService:
         """
         Calculates the weekly digest cards for the dashboard.
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         one_week_ago = now - timedelta(days=7)
         thirty_days_later = now + timedelta(days=30)
         sixty_days_ago = now - timedelta(days=60)

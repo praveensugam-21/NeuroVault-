@@ -66,7 +66,8 @@ class GeminiService:
             return False
         if cls._verified:
             return True
-        if not settings.GEMINI_API_KEY:
+        if not settings.GEMINI_API_KEY or not settings.GEMINI_API_KEY.startswith("AIzaSy"):
+            cls._broken = True
             return False
 
         # Validate the key with a tiny probe call

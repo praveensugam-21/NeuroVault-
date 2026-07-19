@@ -86,7 +86,8 @@ class DocumentPipelineManager:
                     user_id=user_id,
                     full_text=f"Summary: {summary}\nContent:\n{ocr_text}\nMetadata details:\n{fields_json}",
                     category=category,
-                    doc_type=doc_type
+                    doc_type=doc_type,
+                    extracted_fields=extracted_fields
                 )
             except Exception as e:
                 logger.warning(f"[Pipeline] Vector embedding failed: {e}")

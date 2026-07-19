@@ -7,11 +7,19 @@ from datetime import timedelta
 from app.database import get_db
 from app.models.user import User
 from app.models.audit_log import AuditLog
-from app.schemas.user import UserCreate, UserResponse, Token, PINSetup, PINVerify
+from app.schemas.user import UserCreate, UserResponse, Token, PINSetup, PINVerify, GoogleLoginRequest
 from app.services.security import SecurityService
 from app.config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+
+
+@router.get("/config")
+def get_auth_config():
+    """Returns public authentication config, like Google Client ID."""
+    return {
+        "google_client_id": settings.GOOGLE_CLIENT_ID
+    }
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -194,3 +202,93 @@ def get_audit_logs(
         }
         for l in logs
     ]
+
+
+@router.post("/google/verify", response_model=Token)
+def verify_google(
+    payload: GoogleLoginRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Verify Google OAuth2 ID token.
+    If valid, authenticates the user, auto-linking or registering as needed.
+    """
+    from google.oauth2 import id_token
+    from google.auth.transport import requests as google_requests
+
+    try:
+        client_id = settings.GOOGLE_CLIENT_ID
+        id_info = id_token.verify_oauth2_token(
+            payload.id_token,
+            google_requests.Request(),
+            client_id if client_id else None
+        )
+        
+        if id_info.get("iss") not in ["accounts.google.com", "https://accounts.google.com"]:
+            raise ValueError("Wrong issuer.")
+            
+        google_id = id_info.get("sub")
+        email = id_info.get("email")
+        if not google_id or not email:
+            raise ValueError("Token missing google_id or email.")
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Google authentication failed: {str(e)}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Find user by Google ID or by Email (for auto-linking)
+    user = db.query(User).filter(
+        (User.oauth_id == google_id) | (User.email == email)
+    ).first()
+
+    if not user:
+        # Create a new Google OAuth user
+        is_first_user = db.query(User).count() == 0
+        user = User(
+            email=email,
+            oauth_provider="google",
+            oauth_id=google_id,
+            is_admin=is_first_user
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    else:
+        # Auto-link: if user was registered with standard email/password or had different OAuth state,
+        # update it to Google OAuth parameters.
+        updated = False
+        if user.oauth_provider != "google":
+            user.oauth_provider = "google"
+            updated = True
+        if user.oauth_id != google_id:
+            user.oauth_id = google_id
+            updated = True
+        if updated:
+            db.commit()
+
+    # Generate access + refresh token pair
+    access_token = SecurityService.create_access_token(data={"sub": user.email})
+    raw_refresh, hashed_refresh = SecurityService.create_refresh_token()
+
+    user.refresh_token_hash = hashed_refresh
+    db.commit()
+
+    # Audit log
+    audit = AuditLog(
+        user_id=user.id,
+        action="LOGIN_GOOGLE",
+        ip_address=request.client.host if request.client else None
+    )
+    db.add(audit)
+    db.commit()
+
+    return {
+        "access_token": access_token,
+        "refresh_token": raw_refresh,
+        "token_type": "bearer"
+    }
+

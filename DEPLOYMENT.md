@@ -319,6 +319,9 @@ docker volume rm neurovault_postgres-data
 | `POSTGRES_PASSWORD` | `changeme` | **Yes** | PostgreSQL password — change before deploying |
 | `JWT_SECRET_KEY` | placeholder | **Yes** | 32-byte hex secret for JWT signing |
 | `ENCRYPTION_KEY` | placeholder | **Yes** | Fernet key for AES-256 field encryption |
+| `GOOGLE_CLIENT_ID` | `""` | No | Google OAuth Client ID — enables Google Sign-In button |
+| `ALLOWED_ORIGINS` | `""` | No | Comma-separated list of allowed CORS origins in production |
+| `MAX_UPLOAD_SIZE_MB` | `50` | No | Maximum file upload size in MB |
 | `GEMINI_API_KEY` | `""` | No | Google AI Studio API key (enables cloud LLM) |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | No | Gemini model name |
 | `OLLAMA_BASE_URL` | `disabled` | No | Ollama URL or `disabled` to skip |
@@ -328,5 +331,25 @@ docker volume rm neurovault_postgres-data
 | `UPLOADS_DIR` | `/data/uploads` | No | Uploads directory (inside container) |
 | `MODEL_CACHE_DIR` | `/data/model-cache` | No | ML model cache (inside container) |
 | `HF_HOME` | `/data/model-cache/huggingface` | No | HuggingFace cache directory |
+| `ENV_MODE` | `development` | No | Set to `production` for production deployments |
 | `ENABLE_LOCAL_OCR` | `true` | No | Enable EasyOCR for image/scanned-PDF ingestion |
 | `ENABLE_VOICE_TRANSCRIPTION` | `true` | No | Enable Whisper voice note transcription |
+
+---
+
+## 10. Production Security Checklist
+
+Before exposing IRIS to the internet, verify each item:
+
+- [ ] `JWT_SECRET_KEY` is a randomly generated 32-byte hex value (not the placeholder)
+- [ ] `ENCRYPTION_KEY` is a randomly generated Fernet key (not the placeholder)
+- [ ] `POSTGRES_PASSWORD` is a strong random password (not `changeme`)
+- [ ] `ALLOWED_ORIGINS` is set to your actual domain (e.g. `https://iris.yourdomain.com`)
+- [ ] Nginx is configured with a valid TLS certificate (HTTPS only)
+- [ ] `ENV_MODE=production` in your `.env`
+- [ ] Docker volumes are backed up regularly (see [Backup & Restore](#8-backup--restore))
+- [ ] `GEMINI_API_KEY` is a project-scoped key with usage quotas set in Google Cloud Console
+- [ ] `GOOGLE_CLIENT_ID` has only your domain in Authorized JavaScript Origins
+- [ ] The backend port (8000) is **not** exposed to the internet — only Nginx (80/443) should be
+- [ ] Firewall rules block direct access to PostgreSQL port 5432 from outside Docker network
+

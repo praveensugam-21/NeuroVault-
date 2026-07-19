@@ -209,7 +209,10 @@ Use this schema exactly:
   "city": null,
   "district": null,
   "state": null,
-  "pincode": null
+  "pincode": null,
+  "community": null,
+  "caste_category": null,
+  "certificate_number": null
 }
 
 Before producing the JSON:
@@ -248,6 +251,9 @@ _EMPTY_RESULT: Dict[str, Any] = {
     "district": None,
     "state": None,
     "pincode": None,
+    "community": None,
+    "caste_category": None,
+    "certificate_number": None,
 }
 
 
@@ -459,6 +465,9 @@ class OCRExtractor:
             "district":               "district",
             "state":                  "state",
             "pincode":                "pincode",
+            "community":              "community",
+            "caste_category":         "caste_category",
+            "certificate_number":     "certificate_number",
         }
 
         for src_key, dst_key in simple_mapping.items():

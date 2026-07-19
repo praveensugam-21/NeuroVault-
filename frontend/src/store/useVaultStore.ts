@@ -24,6 +24,7 @@ interface VaultState {
   lockDocument: (id: string) => Promise<boolean>;
   unlockDocument: (id: string) => Promise<boolean>;
   fetchDocumentDetail: (id: string, pin?: string) => Promise<DocumentDetail | null>;
+  reextractDocument: (id: string) => Promise<DocumentDetail | null>;
 }
 
 export const useVaultStore = create<VaultState>((set, get) => ({
@@ -146,6 +147,24 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       return response.data;
     } catch (err: any) {
       set({ error: err.response?.data?.detail || 'Failed to open document detail.' });
+      return null;
+    }
+  },
+
+  reextractDocument: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      await api.post(`/api/documents/${id}/reextract`);
+      await get().fetchDocuments();
+      await get().fetchStats();
+      await get().fetchTimelines();
+      await get().fetchAlerts();
+      await get().fetchGraph();
+      set({ loading: false });
+      const freshDetail = await get().fetchDocumentDetail(id);
+      return freshDetail;
+    } catch (err: any) {
+      set({ error: err.response?.data?.detail || 'Re-extraction failed.', loading: false });
       return null;
     }
   },

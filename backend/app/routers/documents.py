@@ -460,7 +460,8 @@ def trigger_reindex(
                 user_id=current_user.id,
                 full_text=f"Summary: {doc.summary}\nContent:\n{ocr_text}\nMetadata details:\n{decrypted_json_str}",
                 category=doc.category,
-                doc_type=doc.document_type
+                doc_type=doc.document_type,
+                extracted_fields=fields
             )
             if indexed:
                 success_count += 1
@@ -513,8 +514,8 @@ def reextract_document_fields(
     try:
         import json as _json
         from app.services.ocr_service import OCRService
-        from app.services.ocr_extractor import OCRExtractor
         from app.services.post_ocr_corrector import PostOCRCorrector
+        from app.services.document_processor import DocumentProcessor
 
         logger.info(f"Re-extraction started for document '{doc.name}' ({doc.id})")
 
@@ -525,18 +526,22 @@ def reextract_document_fields(
 
         logger.info(f"Re-extraction OCR: extracted {len(ocr_text)} characters from '{doc.name}'")
 
-        # Step 2: Run expert LLM field extraction (Gemini 2.5 Flash)
-        expert_raw = OCRExtractor.extract(ocr_text)
-        expert_fields = OCRExtractor.to_legacy_fields(expert_raw)
+        # Step 2: Run the FULL classification and field extraction pipeline
+        # This will re-classify the document if it was previously "Unknown Document"
+        result = DocumentProcessor.process_document(
+            doc.file_path, doc.file_type, ocr_text, original_name=doc.name
+        )
 
-        if not expert_fields:
-            raise HTTPException(status_code=503, detail="LLM field extraction returned empty results.")
+        doc_type = result.get("document_type", "Unknown Document")
+        category = result.get("category", "Unclassified")
+        confidence = result.get("confidence_score", 0.30)
+        fresh_fields = result.get("extracted_fields", {})
 
-        # Step 3: Merge with existing extracted fields (keep any the LLM left null)
+        # Step 3: Merge: fresh fields override existing ones, but don't delete non-null existing fields
         existing_fields = doc.get_extracted_fields() or {}
-        merged = {**existing_fields, **{k: v for k, v in expert_fields.items() if v is not None}}
+        merged = {**existing_fields, **{k: v for k, v in fresh_fields.items() if v is not None}}
 
-        # Step 4: Apply PostOCRCorrector (key casing + geographic corrections)
+        # Step 4: Apply PostOCRCorrector (pincode → state, fuzzy state match, community OCR correction)
         corrected = PostOCRCorrector.correct_fields(merged)
 
         # Step 5: Encrypt and save back to the database
@@ -544,17 +549,26 @@ def reextract_document_fields(
         corrected_json_str = _json.dumps(corrected)
         doc.extracted_json = encryption_service.encrypt(corrected_json_str)
 
+        # Update type, category, confidence, and rebuild summary with corrected fields
+        doc.document_type = doc_type
+        doc.category = category
+        doc.confidence_score = confidence
+        new_summary = DocumentProcessor._build_summary(doc_type, corrected, confidence)
+        doc.summary = new_summary
+
         # Audit log
         audit = AuditLog(user_id=current_user.id, action=f"REEXTRACT_DOCUMENT:{doc.id}")
         db.add(audit)
         db.commit()
         db.refresh(doc)
 
-        logger.info(f"Re-extraction complete for '{doc.name}': {len(corrected)} fields saved.")
+        logger.info(f"Re-extraction complete for '{doc.name}' ({doc.id}): class='{doc_type}', {len(corrected)} fields saved.")
 
         return {
-            "message": f"Successfully re-extracted fields for '{doc.name}' using Gemini 2.5 Flash.",
+            "message": f"Successfully re-extracted fields for '{doc.name}' using full pipeline.",
             "document_id": doc.id,
+            "document_type": doc_type,
+            "category": category,
             "corrected_fields": corrected,
         }
 

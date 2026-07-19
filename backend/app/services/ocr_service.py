@@ -45,14 +45,15 @@ class OCRService:
         # Try text extraction for PDFs (both digital text layer and scanned images)
         if file_type.lower() == "pdf":
             try:
-                import pypdf
+                import fitz  # PyMuPDF is extremely fast and accurate
                 import io
-                reader = pypdf.PdfReader(file_path)
+                doc_fitz = fitz.open(file_path)
                 pdf_text = ""
                 
-                # 1. Try digital text extraction first
-                for page in reader.pages:
-                    page_text = page.extract_text()
+                # 1. Try digital text extraction first via PyMuPDF
+                for page_idx in range(len(doc_fitz)):
+                    page = doc_fitz.load_page(page_idx)
+                    page_text = page.get_text()
                     if page_text:
                         pdf_text += page_text + "\n"
                 
@@ -60,11 +61,7 @@ class OCRService:
                 if not pdf_text.strip() and settings.ENABLE_LOCAL_OCR:
                     logger.info("No digital text found in PDF. Rendering pages to images for local EasyOCR fallback...")
                     try:
-                        import fitz  # PyMuPDF
-                        import io
-                        doc_fitz = fitz.open(file_path)
                         reader_easy = get_easyocr_reader()
-                        
                         if reader_easy:
                             for page_idx in range(len(doc_fitz)):
                                 page = doc_fitz.load_page(page_idx)

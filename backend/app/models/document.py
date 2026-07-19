@@ -1,8 +1,12 @@
 from sqlalchemy import Column, Integer, String, Float, Boolean, Text, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 from app.database import Base
+
+
+def _utcnow():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class Document(Base):
@@ -23,8 +27,8 @@ class Document(Base):
 
     summary = Column(Text, nullable=True)               # 3-5 line natural language summary card
     is_locked = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     # Relationships
     user = relationship("User", back_populates="documents")

@@ -34,7 +34,7 @@ MIN_CONFIDENCE_THRESHOLD = 0.55  # Minimum score to classify as a known type
 
 # Identity document types that benefit from the expert OCR extractor
 _IDENTITY_DOC_TYPES = {
-    "Aadhaar Card", "PAN Card", "Driving Licence", "Passport", "Voter ID"
+    "Aadhaar Card", "PAN Card", "Driving Licence", "Passport", "Voter ID", "Community Certificate"
 }
 
 
@@ -251,7 +251,7 @@ Document OCR Text:
 
         # ── Resume / CV ───────────────────────────────────────────────────────
         resume_score = 0.0
-        if any(kw in combined for kw in ["curriculum vitae", "resume"]):
+        if any(kw in combined for kw in ["curriculum vitae", "resume", " cv", "cv."]):
             resume_score += 0.55
         if any(kw in combined for kw in ["work experience", "professional experience", "employment history"]):
             resume_score += 0.35
@@ -354,6 +354,31 @@ Document OCR Text:
             ins_score += 0.20
         scores["Insurance Policy"] = min(ins_score, 1.0)
 
+        # ── Community Certificate ─────────────────────────────────────────────
+        comm_score = 0.0
+        # Primary signals: exact document type keywords
+        if any(kw in combined for kw in ["community certificate", "caste certificate", "community cert", "caste cert"]):
+            comm_score += 0.55
+        # OCR-noise variants of "community certificate"
+        if any(kw in combined for kw in ["communty cert", "communtiy cert", "communit certif", "caste certif", "con munlty", "coriiwve", "munlty coriiwve"]):
+            comm_score += 0.45
+        # File name hint
+        if any(kw in filename for kw in ["caste", "community", "comm_cert"]):
+            comm_score += 0.35
+        # Caste/community category markers (high confidence individually)
+        if any(kw in combined for kw in ["scheduled caste", "scheduled tribe", "backward class", "backward classes", "community list", "caste list"]):
+            comm_score += 0.35
+        # OCR-noise variants of community/caste category
+        if any(kw in combined for kw in ["adi dravidar", "adi dravida", "adl drouda", "adidravidar", "adi dravioar", "scheduled caate", "scucduicd"]):
+            comm_score += 0.35
+        # Issuing authority signals (tahsildar certificates are almost always community certs)
+        if any(kw in combined for kw in ["revenue department", "tahsildar", "taluk office", "revenue division", "revenue divisional", "talut"]):
+            comm_score += 0.20
+        # SC/ST government terms
+        if any(kw in combined for kw in [" sc ", " st ", " obc ", " mbc ", " bc ", "most backward", "other backward"]):
+            comm_score += 0.15
+        scores["Community Certificate"] = min(comm_score, 1.0)
+
         # ── Select best classification ────────────────────────────────────────
         best_type = max(scores, key=scores.get)
         best_score = scores[best_type]
@@ -391,6 +416,7 @@ Document OCR Text:
             "Electricity Bill": "Property & Legal",
             "Vehicle RC": "Vehicle Documents",
             "Insurance Policy": "Property & Legal",
+            "Community Certificate": "Identity Documents",
         }
 
         tag_map = {
@@ -408,6 +434,7 @@ Document OCR Text:
             "Electricity Bill": ["#utility", "#electricity", "#bill"],
             "Vehicle RC": ["#vehicle", "#rc", "#registration"],
             "Insurance Policy": ["#insurance", "#policy", "#financial"],
+            "Community Certificate": ["#identity", "#community", "#caste", "#government"],
         }
 
         category = category_map.get(doc_type, "Unclassified")
@@ -437,6 +464,7 @@ Document OCR Text:
             or extracted_fields.get("registration_number")
             or extracted_fields.get("account_number")
             or extracted_fields.get("consumer_number")
+            or extracted_fields.get("certificate_number")
         )
         if id_val:
             entities["ID_NUMBER"].append(id_val)
@@ -696,6 +724,46 @@ Document OCR Text:
             if name: 
                 fields["name"] = name.strip()
 
+            # Heuristic skills extraction
+            skills_match = DocumentProcessor._rex(ocr_text, [
+                r"(?:Technical Skills|SKILLS|Skills|Core Skills|Area of Expertise)[:\s]+([\s\S]{5,350}?)(?=\n\n|\n\s*[A-Z][A-Za-z\s\(\)]+[:\n]|\Z)",
+                r"(?:programming languages|key skills|technologies)[:\s]+([\s\S]{5,350}?)(?=\n\n|\n\s*[A-Z][A-Za-z\s\(\)]+[:\n]|\Z)"
+            ])
+            if skills_match:
+                # Clean up formatting
+                fields["skills"] = re.sub(r"\s+", " ", skills_match).strip()
+            else:
+                # Fallback keyword scanning
+                known_techs = [
+                    "python", "javascript", "typescript", "react", "angular", "vue", "nodejs",
+                    "html", "css", "sql", "postgresql", "mysql", "mongodb", "java", "c++",
+                    "c#", "php", "ruby", "rust", "go", "aws", "azure", "gcp", "docker", 
+                    "kubernetes", "git", "linux", "machine learning", "deep learning", "nlp"
+                ]
+                found = []
+                for tech in known_techs:
+                    # Escape plus signs for regex
+                    escaped_tech = re.escape(tech)
+                    if re.search(r"\b" + escaped_tech + r"\b", ocr_text.lower()):
+                        display_name = tech
+                        if tech == "c++": display_name = "C++"
+                        elif tech == "javascript": display_name = "JavaScript"
+                        elif tech == "typescript": display_name = "TypeScript"
+                        elif tech == "react": display_name = "React"
+                        elif tech == "nodejs": display_name = "Node.js"
+                        elif tech == "postgresql": display_name = "PostgreSQL"
+                        elif tech == "mysql": display_name = "MySQL"
+                        elif tech == "mongodb": display_name = "MongoDB"
+                        elif tech == "html": display_name = "HTML"
+                        elif tech == "css": display_name = "CSS"
+                        elif tech == "sql": display_name = "SQL"
+                        elif tech == "aws": display_name = "AWS"
+                        elif tech == "gcp": display_name = "GCP"
+                        else: display_name = tech.title()
+                        found.append(display_name)
+                if found:
+                    fields["skills"] = ", ".join(found)
+
         elif doc_type == "Offer Letter":
             company = DocumentProcessor._rex(ocr_text, [
                 r"(?:Company|Organisation|Employer)[:\s]+([A-Za-z][A-Za-z\s&\.]{2,50})(?=\n|Ltd|Pvt|Inc|$)",
@@ -886,6 +954,87 @@ Document OCR Text:
             ])
             if expiry: fields["expiry_date"] = DocumentProcessor._to_iso_date(expiry)
 
+        elif doc_type == "Community Certificate":
+            # ── Community Certificate — noise-tolerant regex fallback ──
+            ocr_clean = ocr_text.lower() if ocr_text else ""
+
+            if not fields.get("name"):
+                name = DocumentProcessor._rex(ocr_text, [
+                    r"(?:certify\s*that|terit/\s*that|terit\s*that|certit\s*that|certit|terit/|terit|to\s*certify\s*that)[ \t]+([A-Za-z][A-Za-z ]{2,45})(?=\s+(?:son|daughter|wife|belongs|belovoe|belove|\*८n|\*n|dan|s/o|d/o|child|of|\*|\bof\b|\n|$))",
+                    r"(?:Name of the Applicant|Applicant Name|Name of Applicant)[: \t\-]+([A-Za-z][A-Za-z ]{2,45})",
+                    r"\b(?:Name|NAME)[: \t\-]+([A-Za-z][A-Za-z ]{2,45})",
+                ])
+                if name: fields["name"] = name.strip()
+
+            if not fields.get("father_name"):
+                father = DocumentProcessor._rex(ocr_text, [
+                    r"(?:\*८n|\*८on|\*on|\*n|son of|son|daughter of|d/o|s/o)[ \t\"\'\-]+([A-Za-z][A-Za-z ]{2,35})(?=\r?\n|$)",
+                    r"\b(?:Father's Name|Father Name|husband|parent)[: \t\-]+([A-Za-z][A-Za-z ]{2,45})"
+                ])
+                if father: fields["father_name"] = father.strip()
+
+            if not fields.get("community"):
+                community = DocumentProcessor._rex(ocr_text, [
+                    r"(?:belongs|belong|belovoe|belove)\s*(?:to|to the|@l|at)?[ \t]+([A-Za-z][A-Za-z ]{2,25})(?=\s+(?:Community|Communwv|Commun|Caste|caste|,|\.|\n|$))",
+                    r"\b(?:Community|belongs? to the)[: \t\-]+([A-Za-z][A-Za-z ]{2,25})",
+                ])
+                if community: fields["community"] = community.strip()
+
+            if not fields.get("caste_category"):
+                # Direct classification from noisy keywords
+                if re.search(r"\b(?:scheduled|scucduicd|scucd)\s*(?:caste|caate|castc|casle|c0|cast|c0\s*tcr)\b", ocr_clean):
+                    fields["caste_category"] = "Scheduled Caste"
+                elif re.search(r"\b(?:scheduled|scucduicd|scucd)\s*(?:tribe|tibe|trbe|st)\b", ocr_clean):
+                    fields["caste_category"] = "Scheduled Tribe"
+                elif re.search(r"\b(?:most\s*backward|mbc)\b", ocr_clean):
+                    fields["caste_category"] = "Most Backward Class"
+                elif re.search(r"\b(?:backward|bc)\b", ocr_clean):
+                    fields["caste_category"] = "Backward Class"
+                else:
+                    cat = DocumentProcessor._rex(ocr_text, [
+                        r"(?:Category|category)[:\s]+([A-Z]{1,3}(?:\s*/\s*[A-Z]{1,3})?)",
+                    ])
+                    if cat: fields["caste_category"] = cat.strip()
+
+            if not fields.get("certificate_number"):
+                cert_no = DocumentProcessor._rex(ocr_text, [
+                    r"\b((?:tn|tw)/\d{4}/\d{7})\b",
+                    r"\b((?:tn|tw)-\d{12,16})\b",
+                    r"\b(?:tn|tw)[ \t\-/]*(\d{10,16})\b",
+                    r"\b(?:certificate\s*no|cert\s*no|no\.|mumbrr|number)\b[ \t\-/]*(?:tw|tn)?[ \t\-/]*([A-Za-z0-9/]{5,25})",
+                ])
+                if cert_no:
+                    cert = cert_no.strip().upper()
+                    # Fix OCR-garbled TW prefix
+                    if cert.startswith("TW"):
+                        cert = "TN" + cert[2:]
+                    elif not cert.startswith("TN"):
+                        cert = "TN " + cert
+                    fields["certificate_number"] = cert
+
+            if not fields.get("district"):
+                district = DocumentProcessor._rex(ocr_text, [
+                    r"\b([A-Za-z][A-Za-z ]{2,20})\s+(?:district|dlatriel|dlstrict|dist|dlatr)\b",
+                    r"\b(?:district|dlatriel|dlstrict|dist|dlatr)[: \t\-]+([A-Za-z][A-Za-z ]{2,30})\b",
+                ])
+                if district: fields["district"] = district.strip()
+
+            if not fields.get("issuing_authority"):
+                authority = DocumentProcessor._rex(ocr_text, [
+                    r"(?:Tahsildar|Revenue Divisional Officer|District Collector|Mandal Revenue|Block Development)[\s,]+([A-Za-z][A-Za-z\s,\.]{2,60})",
+                    r"(?:Issued by|Issuing Authority)[:\s]+([A-Za-z][A-Za-z\s,\.]{2,60})",
+                ])
+                if authority: fields["issuing_authority"] = authority.strip()
+
+            # Apply post-OCR correction to community cert specific fields
+            try:
+                from app.services.post_ocr_corrector import PostOCRCorrector
+                comm_fields_to_correct = {k: v for k, v in fields.items() if v and isinstance(v, str)}
+                corrected = PostOCRCorrector.correct_fields(comm_fields_to_correct)
+                fields.update(corrected)
+            except Exception as e:
+                logger.debug(f"PostOCR correction skipped for community cert: {e}")
+
         return fields
 
     @staticmethod
@@ -971,9 +1120,21 @@ Document OCR Text:
         id_val = (
             fields.get("aadhaar_number") or fields.get("pan_number") or fields.get("dl_number")
             or fields.get("roll_number") or fields.get("registration_number")
+            or fields.get("certificate_number")
         )
         if id_val:
             parts.append(f"ID: {id_val}.")
+
+        # Community / Caste Certificate Details
+        community = fields.get("community")
+        caste_cat = fields.get("caste_category")
+        if community:
+            parts.append(f"Community: {community}.")
+        if caste_cat:
+            parts.append(f"Category: {caste_cat}.")
+        issuing_auth = fields.get("issuing_authority")
+        if issuing_auth:
+            parts.append(f"Issued by: {issuing_auth}.")
 
         # Contact Details (Resumes, general)
         email = fields.get("email")

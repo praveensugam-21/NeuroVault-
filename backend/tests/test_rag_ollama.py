@@ -34,8 +34,14 @@ prompt = (
     "\n\n## Answer:\n"
 )
 
-print("Sending to Ollama...")
-answer = OllamaService.generate_completion(prompt)
-print()
-print("=== IRIS RESPONSE ===")
-print(answer if answer else "ERROR: Empty response from Ollama")
+
+def run_checks():
+    print("Sending to Ollama...")
+    answer = OllamaService.generate_completion(prompt)
+    print()
+    print("=== IRIS RESPONSE ===")
+    print(answer if answer else "ERROR: Empty response from Ollama")
+
+
+if __name__ == "__main__":
+    run_checks()

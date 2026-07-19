@@ -113,7 +113,73 @@ class RAGPipeline:
                     "chunk_index": hit["metadata"].get("chunk_index", 0),
                 })
 
-        # ── Step 2: SQL keyword fallback if semantic search found nothing ─────────────────────
+        # ── Step 1b: Parallel SQL Metadata Search ──
+        # Scan clean database fields in parallel to guarantee accurate retrieval for OCR-noisy scans
+        try:
+            all_docs = db.query(Document).filter(
+                Document.user_id == user_id,
+                Document.status == "COMPLETE"
+            ).all()
+
+            cleaned_q = EmbeddingService.clean_query(question).lower()
+            query_words = set(re.findall(r'\w+', cleaned_q))
+
+            for doc in all_docs:
+                if doc.is_locked:
+                    continue
+
+                fields = doc.get_extracted_fields()
+                matched_fields = {}
+
+                for k, v in fields.items():
+                    if not v or isinstance(v, (dict, list)):
+                        continue
+                    v_str = str(v).lower()
+                    k_clean = str(k).replace("_", " ").lower()
+
+                    k_words = set(re.findall(r'\w+', k_clean))
+                    v_words = set(re.findall(r'\w+', v_str))
+
+                    # Key overlap or value matching (e.g. "what is my PAN" matches key "pan_number"; name matches value)
+                    if (query_words & k_words) or (query_words & v_words) or (cleaned_q in v_str) or (v_str in cleaned_q):
+                        matched_fields[k] = v
+
+                if matched_fields:
+                    fields_str = "\n".join(f"- **{k.replace('_', ' ').title()}**: `{v}`" for k, v in matched_fields.items())
+                    
+                    metadata_hit = {
+                        "document_id": doc.id,
+                        "chunk_id": f"{doc.id}_verified_metadata",
+                        "similarity": 1.0,
+                        "text": f"Verified Database Fields:\n{fields_str}",
+                        "metadata": {
+                            "section": "Verified Fields",
+                            "chunk_index": -1,
+                            "document_type": doc.document_type
+                        }
+                    }
+
+                    if doc.id not in doc_chunks:
+                        doc_chunks[doc.id] = {"doc": doc, "hits": []}
+
+                    # Inject if not already added
+                    if not any(h.get("chunk_id") == f"{doc.id}_verified_metadata" for h in doc_chunks[doc.id]["hits"]):
+                        doc_chunks[doc.id]["hits"].append(metadata_hit)
+
+                        # Place verified metadata citation at the very front of citation list
+                        citations.insert(0, {
+                            "document_id": doc.id,
+                            "document_name": doc.name,
+                            "category": doc.category or "General",
+                            "snippet": f"Verified Database Fields: {', '.join(f'{k}: {v}' for k, v in matched_fields.items())}",
+                            "similarity": 1.0,
+                            "section": "Verified Fields",
+                            "chunk_index": -1,
+                        })
+        except Exception as e:
+            logger.error(f"Parallel SQL metadata search failed: {e}")
+
+        # ── Step 2: SQL keyword fallback if semantic search and metadata search found nothing ─────
         if not doc_chunks:
             logger.info("Semantic search returned no results. Falling back to SQL keyword search.")
             q_terms = [
@@ -398,6 +464,54 @@ class RAGPipeline:
                                 "citations": citations[:1] or [{"document_id": doc.id, "document_name": doc.name, "category": doc.category or "General", "snippet": doc.summary or ""}],
                                 "retrieval_method": "local_rules_pan"}
 
+        # ── RULE 2.5: Community Certificate ────────────────────────────────────
+        community_kws = [
+            "community", "caste", "scheduled caste", "scheduled tribe",
+            "adi dravidar", "backward class", "obc", "community certificate",
+            "caste certificate", "my community", "community name",
+        ]
+        if any(w in q_lower for w in community_kws):
+            for item in docs_metadata:
+                doc, fields = item["doc"], item["fields"]
+                if doc.document_type == "Community Certificate" or any(
+                    w in doc.name.lower() for w in ["community", "caste", "cert"]
+                ):
+                    community  = fields.get("community") or fields.get("caste")
+                    caste_cat  = fields.get("caste_category") or fields.get("category")
+                    cert_no    = fields.get("certificate_number")
+                    name       = fields.get("name")
+                    district   = fields.get("district")
+                    authority  = fields.get("issuing_authority")
+                    father     = fields.get("father_name")
+
+                    ans = f"### 🪪 Community Certificate Details\n**Source:** {doc.name}\n\n"
+                    ans += f"| Field | Value |\n| :--- | :--- |\n"
+                    if name:       ans += f"| **Name** | {name} |\n"
+                    if community:  ans += f"| **Community** | {community} |\n"
+                    if caste_cat:  ans += f"| **Caste Category** | {caste_cat} |\n"
+                    if cert_no:    ans += f"| **Certificate No.** | `{cert_no}` |\n"
+                    if father:     ans += f"| **Father's Name** | {father} |\n"
+                    if district:   ans += f"| **District** | {district} |\n"
+                    if authority:  ans += f"| **Issuing Authority** | {authority} |\n"
+
+                    if not any([community, caste_cat, cert_no, name]):
+                        # Fields not yet extracted — tell user to re-upload
+                        ans = (
+                            "### 🪪 Community Certificate\n"
+                            f"**Source:** {doc.name}\n\n"
+                            "⚠️ Key fields (community, caste category) could not be extracted from this document. "
+                            "This is likely due to low OCR quality on the scanned image. "
+                            "Please try re-uploading a clearer scan of your Community Certificate."
+                        )
+
+                    return {
+                        "answer": ans,
+                        "citations": citations[:1] or [{"document_id": doc.id, "document_name": doc.name,
+                                                        "category": doc.category or "Identity Documents",
+                                                        "snippet": doc.summary or ""}],
+                        "retrieval_method": "local_rules_community_cert"
+                    }
+
         # ── RULE 3: Aadhaar Card ─────────────────────────────────────────────
         if "aadhaar" in q_lower or "aadhar" in q_lower:
             for item in docs_metadata:
@@ -493,6 +607,33 @@ class RAGPipeline:
                     return {"answer": ans,
                             "citations": citations[:1] or [{"document_id": doc.id, "document_name": doc.name, "category": doc.category or "General", "snippet": doc.summary or ""}],
                             "retrieval_method": "local_rules_academic"}
+
+        # ── RULE 7.2: Skills / Resume ─────────────────────────────────────────
+        resume_kws = ["skills", "resume", "cv", "projects", "experience", "programming", "technologies", "languages"]
+        if any(w in q_lower for w in resume_kws):
+            for item in docs_metadata:
+                doc, fields = item["doc"], item["fields"]
+                if doc.document_type == "Resume" or any(w in doc.name.lower() for w in ["resume", "cv"]):
+                    name   = fields.get("name") or fields.get("full_name")
+                    email  = fields.get("email")
+                    phone  = fields.get("phone")
+                    skills = fields.get("skills")
+
+                    ans = f"### 📄 Resume & Technical Skills Details\n**Source:** {doc.name}\n\n"
+                    ans += f"| Field | Value |\n| :--- | :--- |\n"
+                    if name:   ans += f"| **Name** | {name} |\n"
+                    if email:  ans += f"| **Email** | {email} |\n"
+                    if phone:  ans += f"| **Phone** | {phone} |\n"
+                    if skills: ans += f"| **Skills** | {skills} |\n"
+
+                    if not any([name, email, phone, skills]) and doc.summary:
+                        ans += f"\n\n**Summary:**\n{doc.summary}"
+                    
+                    return {
+                        "answer": ans,
+                        "citations": citations[:1] or [{"document_id": doc.id, "document_name": doc.name, "category": doc.category or "Professional Documents", "snippet": doc.summary or ""}],
+                        "retrieval_method": "local_rules_resume_skills"
+                    }
 
         # ── RULE 7: Professional / Employment Documents ───────────────────────
         professional_kws = ["company", "salary", "ctc", "joining", "job", "designation",

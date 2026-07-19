@@ -10,7 +10,8 @@ IRIS is a personal document intelligence platform that lets you upload, understa
 
 | Feature | Description |
 |---|---|
-| 📄 **Universal OCR** | EasyOCR + pypdf extract text from scanned images and digital PDFs |
+| 📄 **Universal OCR** | EasyOCR + PyMuPDF extract text from scanned images and digital PDFs |
+| 🔑 **Google Sign-In** | Optional Google OAuth 2.0 with secure ID-token verification + account auto-linking |
 | 🧠 **Semantic Search** | ChromaDB vector DB with MMR retrieval + CrossEncoder reranking |
 | 💬 **AI Chat Interface** | Ask questions in natural language; get cited answers from your documents |
 | 🔒 **PII Masking** | Aadhaar, PAN, passport, DL, email, phone numbers masked locally before any cloud call |
@@ -38,10 +39,10 @@ IRIS is a personal document intelligence platform that lets you upload, understa
 | **Embeddings** | `all-MiniLM-L6-v2` (SentenceTransformers) | 384-dim |
 | **Reranking** | `cross-encoder/ms-marco-MiniLM-L-6-v2` | — |
 | **OCR** | EasyOCR (CRAFT + ResNet/LSTM) | — |
-| **PDF Parsing** | pypdf | — |
+| **PDF Parsing** | PyMuPDF (fitz) | — |
 | **Primary LLM** | Gemini 2.5 Flash (cloud, PII-masked) | `gemini-2.5-flash` |
 | **Secondary LLM** | Ollama / llama3.2 (local, optional) | disabled by default |
-| **Auth** | JWT (access 15 min) + refresh tokens (30 days) | Argon2id hashing |
+| **Auth** | JWT (access 15 min) + refresh tokens (30 days) | Argon2id hashing + Google OAuth 2.0 |
 | **Reverse Proxy** | Nginx | alpine |
 | **Containerisation** | Docker Compose | — |
 
@@ -104,13 +105,38 @@ start http://localhost
 | `JWT_SECRET_KEY` | *(required)* | Secret for JWT signing — generate with `openssl rand -hex 32` |
 | `ENCRYPTION_KEY` | *(required)* | Fernet key for AES-256 field encryption |
 | `GEMINI_API_KEY` | `""` (disabled) | Google AI Studio API key — leave blank for fully offline mode |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model name — use `gemini-2.5-flash` for new AQ. keys |
-| `OLLAMA_BASE_URL` | `disabled` | Ollama endpoint. Set to `http://host.docker.internal:11434` to use host Ollama, or `http://ollama:11434` for containerised Ollama |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model name |
+| `GOOGLE_CLIENT_ID` | `""` (disabled) | Google OAuth Client ID — see [Google OAuth Setup](#google-oauth-setup) |
+| `ALLOWED_ORIGINS` | `""` (localhost) | Comma-separated list of allowed CORS origins in production |
+| `MAX_UPLOAD_SIZE_MB` | `50` | Maximum file upload size in megabytes |
+| `OLLAMA_BASE_URL` | `disabled` | Ollama endpoint. Set to `http://host.docker.internal:11434` to use host Ollama |
 | `OLLAMA_MODEL` | `llama3.2` | Ollama model to use when Ollama is enabled |
 | `CHROMA_PERSIST_DIR` | `/data/chromadb` | ChromaDB storage path inside the container |
 | `UPLOADS_DIR` | `/data/uploads` | Uploaded files storage path |
 | `MODEL_CACHE_DIR` | `/data/model-cache` | HuggingFace + EasyOCR model cache path |
 | `HF_HOME` | `/data/model-cache/huggingface` | HuggingFace cache directory |
+| `ENV_MODE` | `development` | Set to `production` for production deployments |
+| `ENABLE_LOCAL_OCR` | `true` | Enable/disable local EasyOCR (disable on low-resource servers) |
+
+---
+
+## 🔑 Google OAuth Setup
+
+Google Sign-In is **fully optional**. To enable it:
+
+1. Go to [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials)
+2. Click **Create Credentials → OAuth 2.0 Client ID**
+3. Application type: **Web application**
+4. Under **Authorized JavaScript origins**, add:
+   - `http://localhost:5173` (development)
+   - `https://yourdomain.com` (production)
+5. Copy the **Client ID** and add it to your `.env`:
+   ```env
+   GOOGLE_CLIENT_ID=123456789-xxxxxx.apps.googleusercontent.com
+   ```
+6. Restart the backend: `docker compose restart backend`
+
+The Google Sign-In button will now appear on the login page. Existing users who sign in with Google for the first time have their account **automatically linked** by email.
 
 ---
 
@@ -208,6 +234,7 @@ NeuroVault/
 | Doc | Description |
 |---|---|
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Full deployment and operations guide |
+| [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
 | [docs/01_ARCHITECTURE.md](docs/01_ARCHITECTURE.md) | System architecture and service diagrams |
 | [docs/10_SECURITY_AND_PRIVACY.md](docs/10_SECURITY_AND_PRIVACY.md) | Security model and privacy contract |
 | [docs/11_PARSING_ENGINES.md](docs/11_PARSING_ENGINES.md) | OCR pipeline and correction engines |
@@ -219,3 +246,7 @@ NeuroVault/
 ## 📄 License
 
 MIT © 2026 NeuroVault Contributors
+
+---
+
+*Current version: **2.1.0** — See [CHANGELOG.md](CHANGELOG.md) for all changes.*

@@ -1,7 +1,8 @@
 from app.services.embedding_service import EmbeddingService
 import json
 
-def test():
+
+def run_search_check():
     user_id = 1
     query = "skills in resume"
     print(f"Searching for: '{query}'...")
@@ -11,5 +12,6 @@ def test():
     for hit in hits:
         print(f"- Doc: {hit['document_id']} | Similarity: {hit['similarity']} | Section: {hit['metadata'].get('section')} | Snippet: {hit['text'][:100]}...")
 
+
 if __name__ == "__main__":
-    test()
+    run_search_check()
