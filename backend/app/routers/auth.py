@@ -292,3 +292,95 @@ def verify_google(
         "token_type": "bearer"
     }
 
+
+from pydantic import BaseModel
+from typing import Optional
+
+class AIConfigRequest(BaseModel):
+    gemini_api_key: Optional[str] = None
+    ollama_base_url: Optional[str] = None
+
+@router.get("/ai-config")
+def get_ai_config(current_user: User = Depends(SecurityService.get_current_user)):
+    """
+    Returns the current active AI configuration (Gemini & Ollama settings),
+    masking the Gemini API key for security.
+    """
+    # Only admins can view the AI settings
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Only admins can view AI configuration.")
+
+    raw_key = settings.GEMINI_API_KEY or ""
+    masked_key = ""
+    if raw_key:
+        if len(raw_key) > 8:
+            masked_key = f"{raw_key[:5]}...{raw_key[-4:]}"
+        else:
+            masked_key = "********"
+
+    return {
+        "gemini_api_key": masked_key,
+        "ollama_base_url": settings.OLLAMA_BASE_URL,
+        "gemini_model": settings.GEMINI_MODEL,
+        "ollama_model": settings.OLLAMA_MODEL
+    }
+
+@router.post("/ai-config")
+def update_ai_config(
+    payload: AIConfigRequest,
+    current_user: User = Depends(SecurityService.get_current_user)
+):
+    """
+    Updates the active AI configuration. Writes to the persistent uploads/custom_settings.json
+    and hot-reloads the settings in memory.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Only admins can update AI configuration.")
+
+    import os
+    import json
+    custom_path = os.path.join(settings.UPLOADS_DIR, "custom_settings.json")
+
+    # Read existing custom config if it exists
+    custom_data = {}
+    if os.path.exists(custom_path):
+        try:
+            with open(custom_path, "r", encoding="utf-8") as f:
+                custom_data = json.load(f)
+        except Exception:
+            custom_data = {}
+
+    has_updates = False
+    if payload.gemini_api_key is not None:
+        key_stripped = payload.gemini_api_key.strip()
+        # Only write if it's not the masked placeholder
+        if "..." not in key_stripped and key_stripped != "********":
+            custom_data["GEMINI_API_KEY"] = key_stripped
+            settings.GEMINI_API_KEY = key_stripped
+            
+            # Reset GeminiService broken state so it re-verifies the new key
+            from app.services.gemini_service import GeminiService
+            GeminiService._broken = False
+            GeminiService._verified = False
+            GeminiService._client = None
+            has_updates = True
+
+    if payload.ollama_base_url is not None:
+        url_stripped = payload.ollama_base_url.strip()
+        custom_data["OLLAMA_BASE_URL"] = url_stripped
+        settings.OLLAMA_BASE_URL = url_stripped
+        
+        # Reset Ollama client check if applicable
+        from app.services.ollama_service import OllamaService
+        has_updates = True
+
+    if has_updates:
+        # Write back to persistent uploads directory
+        try:
+            with open(custom_path, "w", encoding="utf-8") as f:
+                json.dump(custom_data, f, indent=4)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to persist custom settings: {str(e)}")
+
+    return {"message": "AI configuration updated successfully."}
+

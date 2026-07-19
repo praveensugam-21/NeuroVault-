@@ -78,6 +78,21 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+# Load custom overrides from persistent uploads directory if exists
+custom_path = os.path.join(settings.UPLOADS_DIR, "custom_settings.json")
+if os.path.exists(custom_path):
+    try:
+        import json
+        with open(custom_path, "r", encoding="utf-8") as f:
+            custom_data = json.load(f)
+            if "GEMINI_API_KEY" in custom_data:
+                settings.GEMINI_API_KEY = custom_data["GEMINI_API_KEY"]
+            if "OLLAMA_BASE_URL" in custom_data:
+                settings.OLLAMA_BASE_URL = custom_data["OLLAMA_BASE_URL"]
+    except Exception as e:
+        # Avoid logger import circular dependency
+        print(f"Error loading custom settings overrides: {e}")
+
 # Ensure local storage directories exist
 os.makedirs(settings.UPLOADS_DIR, exist_ok=True)
 os.makedirs(settings.CHROMA_PERSIST_DIR, exist_ok=True)

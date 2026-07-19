@@ -48,7 +48,7 @@ class GeminiService:
             logger.debug("GEMINI_API_KEY is not configured. Gemini will be skipped.")
             return None
         try:
-            cls._client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            cls._client = genai.Client(api_key=settings.GEMINI_API_KEY, http_options={'timeout': 10.0})
             logger.info("Gemini client object created (key not yet verified).")
             return cls._client
         except Exception as e:
@@ -66,8 +66,7 @@ class GeminiService:
             return False
         if cls._verified:
             return True
-        if not settings.GEMINI_API_KEY or not settings.GEMINI_API_KEY.startswith("AIzaSy"):
-            cls._broken = True
+        if not settings.GEMINI_API_KEY:
             return False
 
         # Validate the key with a tiny probe call
@@ -91,8 +90,27 @@ class GeminiService:
                 return False
         except Exception as e:
             logger.warning(f"Gemini API key validation failed: {e}. Falling back to Ollama/local rules.")
-            cls._broken = True
+            if not cls._is_temporary_error(e):
+                cls._broken = True
             return False
+
+    @staticmethod
+    def _is_temporary_error(e: Exception) -> bool:
+        """Helper to classify if an API call exception is a temporary network/rate-limiting issue."""
+        err_str = str(e).lower()
+        if "429" in err_str or "503" in err_str:
+            return True
+        if "rate" in err_str or "quota" in err_str or "exhausted" in err_str:
+            return True
+        if "timeout" in err_str or "unreachable" in err_str or "conn" in err_str:
+            return True
+        # Check attributes
+        for attr in ["code", "status_code"]:
+            if hasattr(e, attr):
+                val = getattr(e, attr)
+                if val in (429, 503):
+                    return True
+        return False
 
     @classmethod
     def generate_completion(cls, prompt: str) -> str:
@@ -122,6 +140,7 @@ class GeminiService:
             return ""
         except Exception as e:
             logger.error(f"Gemini API request failed: {e}")
-            # Mark broken so future calls don't waste time
-            cls._broken = True
+            if not cls._is_temporary_error(e):
+                # Mark broken so future calls don't waste time
+                cls._broken = True
             return ""

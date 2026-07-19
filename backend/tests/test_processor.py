@@ -502,3 +502,63 @@ def test_resume_skills_classification_extraction_and_rag_rule():
     assert res_rag["retrieval_method"] == "local_rules_resume_skills"
 
 
+def test_ai_config_endpoints(client, db):
+    """Verify that admins can read/write AI configurations, while non-admins are blocked."""
+    from app.models.user import User
+    from app.config import settings
+    import os
+    import json
+
+    # Ensure clean state for settings override file
+    custom_path = os.path.join(settings.UPLOADS_DIR, "custom_settings.json")
+    if os.path.exists(custom_path):
+        os.remove(custom_path)
+
+    # 1. Register a test admin user (first user registered is auto-admin)
+    db.query(User).delete()
+    db.commit()
+
+    admin_payload = {"email": "admin@example.com", "password": "secure_password"}
+    client.post("/api/auth/register", json=admin_payload)
+    
+    login_res = client.post("/api/auth/login", data={"username": "admin@example.com", "password": "secure_password"})
+    admin_token = login_res.json()["access_token"]
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # 2. Register a non-admin user
+    client.post("/api/auth/register", json={"email": "user@example.com", "password": "user_password"})
+    login_user_res = client.post("/api/auth/login", data={"username": "user@example.com", "password": "user_password"})
+    user_token = login_user_res.json()["access_token"]
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+
+    # 3. GET config as non-admin -> should fail (403)
+    get_user = client.get("/api/auth/ai-config", headers=user_headers)
+    assert get_user.status_code == 403
+
+    # 4. GET config as admin -> should succeed (200)
+    get_admin = client.get("/api/auth/ai-config", headers=admin_headers)
+    assert get_admin.status_code == 200
+    assert "ollama_base_url" in get_admin.json()
+
+    # 5. POST config as admin -> should succeed and update settings
+    post_payload = {"gemini_api_key": "AIzaSy_NewCustomKey_12345", "ollama_base_url": "http://ollama_test:11434"}
+    post_res = client.post("/api/auth/ai-config", json=post_payload, headers=admin_headers)
+    assert post_res.status_code == 200
+
+    # Verify memory reload
+    assert settings.GEMINI_API_KEY == "AIzaSy_NewCustomKey_12345"
+    assert settings.OLLAMA_BASE_URL == "http://ollama_test:11434"
+
+    # Verify file persistence
+    assert os.path.exists(custom_path)
+    with open(custom_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        assert data["GEMINI_API_KEY"] == "AIzaSy_NewCustomKey_12345"
+        assert data["OLLAMA_BASE_URL"] == "http://ollama_test:11434"
+
+    # Clean up custom config file
+    if os.path.exists(custom_path):
+        os.remove(custom_path)
+
+
+
