@@ -63,11 +63,20 @@ User Query ───────────────────────
                        Assemble Context Prompt + Chunk Citations
                                                │
                                                ▼
-                                    Generate Cited Response
-                            (via local Ollama or Local Rules Engine)
+                                     Generate Cited Response
+                   (via Gemini 2.5 Flash REST client, local Ollama, or Rules Engine)
                                                │
                                                ▼
-                                    Display Answer to User
+                                     Display Answer to User
 ```
 
 This chunk-level retrieval loop ensures the query assistant extracts specific relevant sections (e.g. only the *Skills* section of a Resume) instead of loading the entire document, resulting in a cleaner prompt and more accurate answers with section-specific citations.
+
+---
+
+## 4. Rate Limiting & Retry Resiliency
+
+To handle Google AI Studio quota limits (especially when multiple documents are uploaded or during fast conversational turns):
+- **429 Rate Limit Propagation**: The direct REST API client (`gemini_service.py`) detects `HTTP 429 Too Many Requests` status codes and raises a clean `GeminiRateLimitError`.
+- **Exponential Backoff**: The `RAGPipeline` captures rate limit exceptions and executes automatic exponential backoff retries (up to 3 retries, starting with a 2-second delay and doubling up to 8 seconds).
+- **Graceful Fallback**: If retries are exhausted or the API key is completely broken/missing, the pipeline automatically falls back to the configured local Ollama instance or the Local Rules Engine.

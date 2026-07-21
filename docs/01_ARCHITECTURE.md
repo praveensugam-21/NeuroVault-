@@ -2,7 +2,7 @@
 
 This document explains the full system architecture of a self-hosted IRIS deployment, including the LLM routing stack, document processing pipeline, and service responsibilities.
 
-> **Last Updated:** 2026-07-17 — Updated for Gemini 2.5 Flash, OLLAMA_BASE_URL=disabled, and reextract endpoint.
+> **Last Updated:** 2026-07-21 — Updated for direct HTTP/1.1 REST client (`gemini_service.py`), Settings API key management, 429 rate limit retries, and multi-intent RAG prompt.
 
 ---
 

@@ -6,18 +6,21 @@ This document explains how to run automated unit tests and verify the code struc
 
 ## 1. Backend Unit Tests (`pytest`)
 
-We use `pytest` to test backend models, taxonomy classifications, and regex parsing rules.
+We use `pytest` to test backend models, taxonomy classifications, Google OAuth logins, settings management, and regex parsing rules.
+
+### Test Environment & Database Fixtures:
+Backend tests use a shared SQLite database fixture defined in `backend/tests/conftest.py`. This ensures tests run in-memory or in isolated test databases, completely separated from development or production databases.
 
 ### Setup Test Commands:
-First, activate the virtual environment and ensure test packages are installed:
+First, activate the virtual environment and ensure all dependencies are installed:
 ```bash
 cd backend
-pip install pytest pytest-mock
+pip install -r requirements.txt
 ```
 
 To run the full test suite:
 ```bash
-pytest tests/ -v
+python -m pytest tests/ -v
 ```
 
 ### Writing a New Test Case:

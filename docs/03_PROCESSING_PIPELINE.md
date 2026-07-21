@@ -48,14 +48,15 @@ This document explains the step-by-step lifecycle of a document as it passes thr
   - Thresholding/Contrast enhancement: Improve legibility of faded text.
 
 ### Step 3: OCR / Vision AI Analysis
-- **Primary:** Digital PDF text-layer extraction via `pypdf`.
+- **Primary:** Digital PDF text-layer extraction via **PyMuPDF (`fitz`)** for 5–10x faster rendering and extraction.
 - **Fallback for Scanned Images/PDFs:** Runs local **EasyOCR** to scan text lines offline.
 
 ### Step 4: Document Type Classification
 - **Action:** The text contents are processed to identify the document type from our 50+ taxonomy classes (e.g., detecting terms like "Permanent Account Number Card" or "Aadhaar" or "marksheet"). It outputs the classification alongside a confidence level (High / Medium / Low).
 
-### Step 5: Structured Field Extraction
-- **Action:** Map the text to the target category schema (defined in `02_DOCUMENT_TAXONOMY.md`). It uses local Ollama to extract JSON fields. If Ollama fails, it falls back to targeted regular expressions (Regex) to extract the key values.
+### Step 5: Structured Field Extraction & Post-OCR Correction
+- **Action:** Map the text to the target category schema (defined in `02_DOCUMENT_TAXONOMY.md`). It uses `OCRExtractor` with Gemini 2.5 Flash (via direct HTTP/1.1 REST API) or local Ollama. If unavailable, it falls back to noise-tolerant regex patterns.
+- **Post-OCR Correction:** `PostOCRCorrector` runs a three-pass cleanup on the extracted JSON, including pincode-to-state lookup and fuzzy string distance matching to fix geographic OCR errors.
 
 ### Step 6: Data Validation
 - **Action:** Extracted fields are parsed against standard format rules:

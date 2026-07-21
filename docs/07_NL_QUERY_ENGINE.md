@@ -18,6 +18,15 @@ The assistant parses user queries and maps them to documents using semantic vect
 | *"What documents do I need to renew in the next 6 months?"* | All Documents | Scan all decrypted `action_items.expiry_date` values -> Filter dates within 180 days -> Generate list. |
 | *"What is my blood type?"* | `Medical Reports` (Medical chunks) | Search medical chunks for keywords: "blood group", "blood type", "A+", "O-" -> Extract match. |
 | *"Show me my resume skills"* | `Resume` (Skills chunk) | Target vector search directly at "Skills" section chunk of Resume -> Retrieve text snippet. |
+| *"What is the capital of France?"* | None (General Knowledge) | Detect no relevant document chunks -> Route to LLM general knowledge path -> Answer query using base LLM training. |
+
+---
+
+## 2. Multi-Intent & General Knowledge Support
+
+The RAG system prompt is configured to handle both document-grounded queries and general knowledge queries:
+- **Document-Grounded Mode**: If relevant document chunks are retrieved with high similarity, the prompt instructs the LLM to base its answers strictly on the retrieved context and provide inline citations (`[Doc: <filename>]`).
+- **General Knowledge Mode**: If the query is conversational (e.g. "Hello", "How are you?") or requests general information (e.g. "Write a Python script to reverse a string" or "Explain quantum computing"), the LLM answers using its base knowledge without forcing citation placeholders, while maintaining user-friendly conversational context.
 
 ---
 

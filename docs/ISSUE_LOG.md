@@ -466,5 +466,52 @@ This session resolved a chain of cascading issues that prevented AI-assisted OCR
 - **Learning:**
   Establish a canonical project directory structure from the start of a project. Ad-hoc file placement accumulates into compounding technical debt and makes onboarding new contributors harder.
 
+---
+
+### Issue #020 — Gemini SDK Connection Timeout Under WSL2
+- **Date:** 2026-07-19
+- **Phase:** Cloud LLM Integration
+- **File:** [gemini_service.py](file:///e:/Desktop/AI%20CHATBOT/backend/app/services/gemini_service.py)
+- **Error Message:**
+  ```text
+  google.api_core.exceptions.ServiceUnavailable: 503 Service Unavailable / Connection reset by peer
+  ```
+- **Root Cause:**
+  The `google-genai` SDK used gRPC/HTTP2 channels under the hood, which experienced socket drops and connection timeouts inside Docker containers running under WSL2 on Windows.
+- **Fix:**
+  Replaced SDK calls with direct HTTP/1.1 REST requests (`httpx` async client) hitting `https://generativelanguage.googleapis.com/v1beta/models/...`.
+- **Learning:**
+  gRPC over WSL2 network bridges can suffer from MTU/keepalive connection resets. Direct HTTP/1.1 REST calls provide much more predictable network behavior in containerized environments.
+
+---
+
+### Issue #021 — Unhandled 429 Rate Limits Crashing RAG Pipeline
+- **Date:** 2026-07-19
+- **Phase:** RAG & Query Engine
+- **File:** [gemini_service.py](file:///e:/Desktop/AI%20CHATBOT/backend/app/services/gemini_service.py), [rag_pipeline.py](file:///e:/Desktop/AI%20CHATBOT/backend/app/services/rag_pipeline.py)
+- **Error Message:**
+  ```text
+  HTTPError: 429 Client Error: RESOURCE_EXHAUSTED for url: ...
+  ```
+- **Root Cause:**
+  When multiple document extractions or high-frequency chat queries occurred, Google AI Studio rate limits (429) were caught as generic unhandled errors, marking the Gemini client broken permanently instead of retrying with backoff.
+- **Fix:**
+  Implemented explicit `GeminiRateLimitError` detection in `gemini_service.py` and wrapped `RAGPipeline` prompt execution with exponential backoff retries (starting at 2s delay).
+- **Learning:**
+  Cloud LLM rate limits must be treated as transient errors with exponential backoff, rather than permanent system failures.
+
+---
+
+### Issue #022 — Hardcoded System-Wide API Key Requirement
+- **Date:** 2026-07-19
+- **Phase:** User Settings & Security
+- **File:** [Settings.tsx](file:///e:/Desktop/AI%20CHATBOT/frontend/src/pages/Settings.tsx), [auth.py](file:///e:/Desktop/AI%20CHATBOT/backend/app/routers/auth.py)
+- **Root Cause:**
+  Users could only supply a Gemini API key via the root `.env` file prior to container startup. Non-technical users could not update or test keys dynamically while the application was running.
+- **Fix:**
+  Added a dedicated Settings page UI (`Settings.tsx`) and backend endpoint (`POST /api/auth/settings/gemini-key`). The backend performs a live probe request (`validate_key`) against Google AI Studio before saving the key to system settings.
+- **Learning:**
+  Dynamic configuration UI with live validation probes dramatically improves user onboarding compared to raw environment variable manipulation.
+
 
 

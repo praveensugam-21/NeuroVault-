@@ -1,73 +1,37 @@
-# React + TypeScript + Vite
+# IRIS Frontend — React + TypeScript + Vite
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The frontend interface for IRIS (NeuroVault) built with React 18, Vite, TypeScript, Tailwind CSS, and Zustand.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🎨 Key Features & Architecture
 
-## React Compiler
+- **Login & Authentication (`Login.tsx`)**: Traditional email/password auth + Google OAuth 2.0 integration with dynamic script loading and ID token backend verification.
+- **Document Vault (`Vault.tsx`)**: Multi-user isolated document management, PIN lock, search, filtering, grid/table toggle, and document re-extraction dispatch.
+- **AI Chat Assistant (`Chat.tsx`)**: Multi-turn conversation UI with document citations, vector store MMR context retrieval, and local rule / Gemini LLM routing.
+- **Dashboard (`Dashboard.tsx`)**: Analytics overview, vault health score, category distribution, academic timeline, and document expiry warnings.
+- **Knowledge Graph (`Graph.tsx`)**: Visual interactive entity relationship graph using React Flow.
+- **Settings Page (`Settings.tsx`)**: System AI engine configuration view allowing users to enter, test, and save custom Gemini API keys via backend live probe endpoint (`POST /api/auth/settings/gemini-key`).
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## 🛠️ State Management & Stores (`src/store/`)
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- `useAuthStore.ts`: Handles user authentication state, token refresh, Google OAuth login flow, and settings API key dispatch.
+- `useVaultStore.ts`: Manages document listing, filtering, PIN authentication state, upload pipeline status, and `/reextract` commands.
+- `useChatStore.ts`: Stores active chat sessions, turn history, and query citations.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+---
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## 🚀 Running Locally
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+```bash
+# Install dependencies
+npm install
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+# Start Vite dev server
+npm run dev
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# Build production bundle
+npm run build
 ```

@@ -8,9 +8,9 @@ This document explains how IRIS AI validates data extraction, determines confide
 
 To maintain data integrity, every extracted field is checked against standard formats using Pydantic or custom regular expressions.
 
-### Identity Validations
+### Identity & Resume Validations
 - **Aadhaar Number:**
-  - Pattern: `^[0-9]{12}$` (Exactly 12 digits, no spaces/hyphens after parsing).
+  - Pattern: `^[0-9]{12}$` (Exactly 12 digits after stripping whitespace/spaces).
   - Validation: Luhn algorithm check (optional verification check) or simple digit length checks.
 - **PAN Number:**
   - Pattern: `^[A-Z]{5}[0-9]{4}[A-Z]{1}$`
@@ -24,6 +24,9 @@ To maintain data integrity, every extracted field is checked against standard fo
   - Pattern: `^[A-Z]{1}[0-9]{7}$` (Standard Indian passport format).
 - **Voter ID (EPIC Number):**
   - Pattern: `^[A-Z]{3}[0-9]{7}$` or state-specific codes like `^MH/[0-9]{2}/[0-9]{3}/[0-9]{6}$`.
+- **Resume Skills & Competencies:**
+  - Parses skills list using customized keyword extractors and resume models to populate the tags database structure.
+  - Matches programming languages, software, cloud services, and professional competencies.
 
 ### Tax & Business Validations
 - **GSTIN Number:**

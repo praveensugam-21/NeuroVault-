@@ -10,7 +10,7 @@ IRIS uses a **three-tier LLM routing strategy**, prioritising intelligence while
 
 | Priority | Engine | Mode | When Used |
 | :---: | :--- | :--- | :--- |
-| 1 | **Google Gemini 1.5 Flash** | Cloud API (with local PII masking) | When `GEMINI_API_KEY` is set in `.env` |
+| 1 | **Google Gemini 2.5 Flash** | Cloud API (with local PII masking) | When `GEMINI_API_KEY` is set in settings or `.env` |
 | 2 | **Ollama Local LLM** | 100% Offline | When Gemini is unavailable or offline |
 | 3 | **Smart Local Rules Engine** | 100% Offline | When both LLMs are unavailable |
 
@@ -54,7 +54,8 @@ After Gemini generates its response, the same local server **swaps the placehold
 - **Docker Compose**: Ensures the entire stack (FastAPI, React, PostgreSQL, ChromaDB, Ollama) is reproducibly configured and network-isolated on any OS.
 - **Nginx**: Acts as the secure gateway — applies rate limiting (5 login attempts/min, 30 req/sec for API) before any request reaches Python.
 
-### F. Why Gemini 1.5 Flash (and not GPT-4 or Claude)
-- **Performance**: Gemini 1.5 Flash delivers near-GPT-4 quality responses at significantly higher speed and lower cost.
+### F. Why Gemini 2.5 Flash (and not GPT-4 or Claude)
+- **Performance**: Gemini 2.5 Flash delivers near-GPT-4 quality responses at significantly higher speed and lower cost. It supports thinking tokens natively.
 - **Safety**: Google API data is isolated per API key and **not used to train models** under the standard API terms of service (unlike consumer chat products).
 - **Hybrid privacy**: Our local PII masking layer makes this choice safe even for sensitive documents — no raw PII ever reaches Google's servers.
+- **Custom Keys**: Users can supply their own keys via Settings UI, validated through a live connection probe. Direct HTTP/1.1 client communication bypasses WSL networking bottlenecks.

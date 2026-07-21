@@ -15,7 +15,8 @@ IRIS is a personal document intelligence platform that lets you upload, understa
 | 🧠 **Semantic Search** | ChromaDB vector DB with MMR retrieval + CrossEncoder reranking |
 | 💬 **AI Chat Interface** | Ask questions in natural language; get cited answers from your documents |
 | 🔒 **PII Masking** | Aadhaar, PAN, passport, DL, email, phone numbers masked locally before any cloud call |
-| ⚡ **Gemini 2.5 Flash** | Primary LLM for OCR correction, field extraction, and chat |
+| ⚡ **Gemini 2.5 Flash** | Primary LLM for OCR correction, field extraction, and chat via direct HTTP/1.1 REST |
+| ⚙️ **Settings UI** | Dynamic custom Gemini API key configuration with live verification probe |
 | 🦙 **Ollama (Optional)** | Run a fully offline LLM on your hardware; disabled by default |
 | 📐 **Local Rules Engine** | Smart regex + dictionary fallback when no LLM is available |
 | 🗃️ **Multi-user Vault** | Row-level user isolation — family or team members can share one instance |
@@ -249,4 +250,4 @@ MIT © 2026 NeuroVault Contributors
 
 ---
 
-*Current version: **2.1.0** — See [CHANGELOG.md](CHANGELOG.md) for all changes.*
+*Current version: **2.2.0** — See [CHANGELOG.md](CHANGELOG.md) for all changes.*

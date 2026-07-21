@@ -3,6 +3,23 @@
 All notable changes to IRIS — Intelligent Retrieval and Information System are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions.
 
+## [2.2.0] — 2026-07-21
+
+### Settings & Live API Key Management
+- **Settings Page**: Added frontend Settings view (`Settings.tsx`) allowing users to dynamically view and update their custom Gemini API key.
+- **Live Validation Probe**: Added `POST /api/auth/settings/gemini-key` endpoint to validate key validity via active API probe before persisting to system settings.
+- **Backend Settings API**: Added `GET /api/auth/settings` to retrieve masked key configuration and AI engine status.
+
+### LLM & RAG Engine Improvements
+- **Direct HTTP/1.1 REST Client**: Rewrote `gemini_service.py` to use direct HTTP/1.1 REST calls (`httpx`) instead of the Google GenAI SDK, resolving WSL network timeouts and SSL connection drops.
+- **Transparent 429 Error Handling**: `GeminiService.generate_completion()` now raises 429 / quota exhaustion errors transparently to allow `RAGPipeline` to execute exponential backoff retries or fallback cleanly.
+- **Multi-Intent RAG System Prompt**: Refactored RAG prompt to support both grounded document QA and answering general domain questions with inline document citations when context is relevant.
+
+### Document Processing & OCR
+- **Fast PDF Text Extraction**: Integrated PyMuPDF (`fitz`) in `ocr_service.py` for 5–10x faster parsing of digital PDFs prior to OCR fallback.
+- **Post-OCR Geographic Resolution**: Implemented PIN code-based state lookups and fuzzy string matching in `post_ocr_corrector.py` to repair OCR state/city spelling errors.
+- **Identity Document & Resume Extraction**: Added precision PII extraction schemas and resume skills parsing in `ocr_extractor.py`.
+
 ---
 
 ## [2.1.0] — 2026-07-19

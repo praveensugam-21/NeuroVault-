@@ -174,7 +174,14 @@ max_output_tokens = 2048
 safety_settings = BLOCK_ONLY_HIGH  # Permissive for document content
 ```
 
-The API key is validated once on startup with a minimal probe call (`max_output_tokens=100`). If the key is invalid or the response is empty, Gemini is marked `_broken=True` and all subsequent requests fall through to Ollama or the local rules engine without retrying.
+The API key can be set in `.env` or dynamically updated via the **Settings page** UI. When updated, a live probe call (`POST /api/auth/settings/gemini-key`) validates key health before persisting settings. Direct HTTP/1.1 REST requests are used to prevent connection stalls. If the key is invalid or fails validation, Gemini is marked `_broken=True` and requests fall through to Ollama or local rules.
+
+### Production Security Headers
+
+The backend automatically attaches security headers to all responses:
+- `Strict-Transport-Security: max-age=31536000; includeSubDomains`: Enforces HTTPS transport.
+- `Cache-Control: no-store`: Prevents sensitive document payloads and PII responses from being cached in downstream client/browser caches.
+- `CORS Restriction`: Origins are strictly whitelisted via `ALLOWED_ORIGINS` environment settings.
 
 ### Fully Offline Alternative
 

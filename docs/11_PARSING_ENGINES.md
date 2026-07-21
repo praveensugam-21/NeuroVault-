@@ -2,7 +2,7 @@
 
 This document explains the full OCR pipeline, text correction engines, and field extraction architecture used inside the IRIS document intelligence system.
 
-> **Last Updated:** 2026-07-17 — Updated for EasyOCR character confusion patterns, PostOCRCorrector key casing fix, Gemini 2.5 as LLM correction layer, and /reextract endpoint.
+> **Last Updated:** 2026-07-21 — Updated for PyMuPDF (`fitz`), direct HTTP/1.1 REST client for Gemini, live Settings API probe, and PostOCRCorrector fixes.
 
 ---
 
@@ -14,8 +14,8 @@ IRIS uses a two-path text extraction strategy depending on the document type:
 
 | Document Type | Extraction Method |
 |---|---|
-| Digital PDF (searchable) | `pypdf` — extracts the embedded text layer directly |
-| Scanned PDF | Rendered to page images, then processed by EasyOCR |
+| Digital PDF (searchable) | `PyMuPDF (fitz)` — extracts the embedded text layer 5–10x faster |
+| Scanned PDF | Rendered to page images via PyMuPDF, then processed by EasyOCR |
 | Image file (JPG, PNG, TIFF) | Passed directly to EasyOCR |
 
 **EasyOCR** is a neural OCR engine built on PyTorch that uses:

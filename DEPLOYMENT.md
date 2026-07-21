@@ -108,12 +108,18 @@ Gemini 2.5 Flash is the primary LLM used for OCR correction, field extraction, a
 
 ### Configuring the Key
 
-In your `.env` file:
+You can configure your Gemini API Key in two ways:
 
-```env
-GEMINI_API_KEY=AQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-GEMINI_MODEL=gemini-2.5-flash
-```
+1. **Via the UI (Recommended)**:
+   - Log in to the application and navigate to **Settings** (`/settings`).
+   - Paste your API key into the Gemini API Key input field and click **Test & Save**.
+   - The backend runs a live probe (`POST /api/auth/settings/gemini-key`). If valid, the key is applied instantly without restarting containers.
+
+2. **Via `.env` file**:
+   ```env
+   GEMINI_API_KEY=AQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   GEMINI_MODEL=gemini-2.5-flash
+   ```
 
 > [!NOTE]
 > The old model `gemini-1.5-flash` is deprecated and does not work with new `AQ.` prefix keys. Always use `gemini-2.5-flash` or a newer model.
