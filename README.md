@@ -244,9 +244,8 @@ NeuroVault/
 
 ---
 
-## 📄 License
+FLOWZINT HACKATHON   
 
-MIT © 2026 NeuroVault Contributors
 
 ---
 
