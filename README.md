@@ -244,6 +244,12 @@ NeuroVault/
 
 ---
 
+NEED TO DO :
+
+- UI 
+- Verification 
+- Changes to make sure connenction with google oauth
+
 FLOWZINT HACKATHON   
 
 
